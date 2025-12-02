@@ -1,0 +1,55 @@
+{
+  "source_dir": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_32_-13_100_55_8_200_0.05_0.005_1.2",
+  "source_split": "train",
+  "num_in": 8192,
+  "num_out": 32,
+  "with_replacement": false,
+  "seed": 42,
+  "has_labels": false,
+  "index_mapping": {
+    "selected_indices_in_concat_space": [
+      701,
+      3631,
+      6013,
+      6221,
+      7584,
+      4093,
+      3684,
+      769,
+      728,
+      5865,
+      7011,
+      3535,
+      1861,
+      4196,
+      7972,
+      4301,
+      3033,
+      1645,
+      6868,
+      4466,
+      5270,
+      6736,
+      3689,
+      3583,
+      6426,
+      5696,
+      1493,
+      6397,
+      6317,
+      3294,
+      1047,
+      5343
+    ],
+    "concat_offsets": [
+      0
+    ],
+    "concat_lengths": [
+      8192
+    ]
+  },
+  "figures": {
+    "scatter": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_32_-13_100_55_8_200_0.05_0.005_1.2_n32/fig_scatter.png",
+    "heatmap": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_32_-13_100_55_8_200_0.05_0.005_1.2_n32/fig_heatmap.png"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "num_points": 8192,
+  "num_train": 8192,
+  "num_val": 0,
+  "seed": 42,
+  "eye_ratio": 0.3,
+  "eye_std": 0.05,
+  "eye_left": [
+    -0.8,
+    0.6
+  ],
+  "eye_right": [
+    0.8,
+    0.6
+  ],
+  "mouth_center": [
+    0.0,
+    -0.3
+  ],
+  "mouth_radius": 1.6,
+  "mouth_deg_range": [
+    200.0,
+    340.0
+  ],
+  "mouth_thickness": 0.04,
+  "scale": 10.0,
+  "anisotropic_scale": null,
+  "rotate_deg": 0.0,
+  "translate": [
+    0.0,
+    0.0
+  ]
+}

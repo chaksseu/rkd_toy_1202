@@ -1,0 +1,80 @@
+{
+  "source_dir": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0",
+  "source_split": "train",
+  "num_in_total": 8192,
+  "num_sampled": 32,
+  "with_replacement": false,
+  "seed": 42,
+  "has_labels": false,
+  "indices_in_concat_space": [
+    701,
+    3631,
+    6013,
+    6221,
+    7584,
+    4093,
+    3684,
+    769,
+    728,
+    5865,
+    7011,
+    3535,
+    1861,
+    4196,
+    7972,
+    4301,
+    3033,
+    1645,
+    6868,
+    4466,
+    5270,
+    6736,
+    3689,
+    3583,
+    6426,
+    5696,
+    1493,
+    6397,
+    6317,
+    3294,
+    1047,
+    5343
+  ],
+  "concat_offsets": [
+    0
+  ],
+  "concat_lengths": [
+    8192
+  ],
+  "H_mode": "direct",
+  "H_matrix": [
+    [
+      32.0,
+      -13.0,
+      100.0
+    ],
+    [
+      55.0,
+      8.0,
+      200.0
+    ],
+    [
+      0.05,
+      0.005,
+      1.2
+    ]
+  ],
+  "H_params": null,
+  "n_valid_w": 32,
+  "files": {
+    "src": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/src.npy",
+    "tgt": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/tgt.npy",
+    "pairs": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/pairs.npy",
+    "pairs_labels": null,
+    "scatter_src": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/fig_scatter_src.png",
+    "scatter_tgt": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/fig_scatter_tgt.png",
+    "scatter_src_tgt": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/fig_scatter_src_tgt.png",
+    "heatmap_src": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/fig_heatmap_src.png",
+    "heatmap_tgt": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0_H_{n}/fig_heatmap_tgt.png"
+  }
+}

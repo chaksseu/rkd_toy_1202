@@ -1,0 +1,28 @@
+{
+  "source_dir": "/workspace/rkd_toy_1112/smile_data_n8192_scale10_rot0_trans_0_0",
+  "num_train_in": 8192,
+  "num_val_in": 0,
+  "num_train_out": 8192,
+  "num_val_out": 0,
+  "n_train_valid_w": 8192,
+  "n_val_valid_w": 0,
+  "H_mode": "direct",
+  "H_matrix": [
+    [
+      32.0,
+      -13.0,
+      100.0
+    ],
+    [
+      55.0,
+      8.0,
+      200.0
+    ],
+    [
+      0.05,
+      0.005,
+      1.2
+    ]
+  ],
+  "H_params": null
+}

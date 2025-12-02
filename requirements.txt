@@ -1,0 +1,17 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+torchvision
+
+accelerate
+diffusers
+transformers
+numpy
+pillow
+matplotlib
+wandb
+safetensors
+einops
+pytorch-fid
+tqdm
+opencv-python-headless
+imageio
