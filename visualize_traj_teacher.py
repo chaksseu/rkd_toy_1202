@@ -20,7 +20,7 @@ from diffusers import DDPMScheduler, DDIMScheduler
 # ===================== CONFIG ===================== #
 CUDA_NUM = 7
 BATCH_SIZE = 1024
-TT=50
+TT=100
 
 WANDB_NAME = f"1117_lr1e4_n32_b{BATCH_SIZE}_ddim_50_150_steps"
 
@@ -113,7 +113,7 @@ class MLPDenoiser(nn.Module):
 
 # ===================== SCHEDULERS ===================== #
 def build_schedulers(num_train_timesteps: int):
-    train_sched = DDPMScheduler(num_train_timesteps=num_train_timesteps, clip_sample=False)
+    train_sched = DDPMScheduler(num_train_timesteps=num_train_timesteps, clip_sample=False, beta_schedule="linear")
     train_sched.config.prediction_type = "epsilon"
     sample_sched = DDIMScheduler.from_config(train_sched.config)
     sample_sched.config.clip_sample = False
@@ -416,16 +416,21 @@ def visualize_student_ddim_trajectories(cfg: dict,
 # 1202
 # f"runs/1202_only_diff_loss_B1024_teacher65536_T{TT}/ckpt_student_step600000.pt"
 
+# 1203
+# runs/1202_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0001_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step045000.pt
+# runs/1202_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step050000.pt
+# 
+
 # ===================== ARGS / ENTRY ===================== #
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize Student DDIM trajectories + pure score field (norm & denorm).")
     parser.add_argument("--ckpt", type=str,
-        default=f"runs/1202_only_diff_loss_B1024_teacher65536_T{TT}/ckpt_student_step600000.pt",
+        default=f"runs/1202_only_diff_loss_B1024_teacher65536_T{TT}/ckpt_student_step1000000.pt",
         help="Path to student checkpoint .pt.")
     parser.add_argument("--n", type=int, default=32, help="Number of pure noise samples.")
-    parser.add_argument("--steps", type=int, default=35, help="DDIM sampling steps.")
+    parser.add_argument("--steps", type=int, default=40, help="DDIM sampling steps.")
     parser.add_argument("--eta", type=float, default=0.0, help="DDIM eta.")
     # bool 인자 (요청대로 str2bool 제거; 단, CLI에서 'False'를 문자열로 주면 True로 해석될 수 있으니 유의)
     parser.add_argument("--frames", type=bool, default=True, help="Save per-timestep frames for both norm/denorm.")

@@ -20,7 +20,6 @@ import colorsys
 import numpy as np
 
 
-
 # ---- 32 distinct colors (high-contrast) ----
 import colorsys
 
@@ -502,299 +501,289 @@ def ddim_resample(
 # runs/1130_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step090000.pt
 # runs/1201_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0001_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step060000.pt
 
-
-TT = 100
 def main():
-    NNN = 65536
+    parser = argparse.ArgumentParser(description="Batch DDIM Inversion → Resampling for .npy data")
+    parser.add_argument("--npy", type=str, default="smile_data_n32_scale2_rot60_trans_50_-20/train.npy", help="Path to x0 .npy file (shape [N, D])")
+    parser.add_argument("--teacher_ckpt", type=str, default="runs/1202_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step050000.pt", help="Path to teacher checkpoint")
+    parser.add_argument("--out_dir", type=str, default="inversion_test_1202_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0", help="Output directory")
+    parser.add_argument("--device", type=str, default="cuda:7")
+    parser.add_argument("--T", type=int, default=100, help="num_train_timesteps used in training")
+    parser.add_argument("--steps", type=int, default=40, help="DDIM steps (sampling/inversion)")
+    parser.add_argument("--batch_size", type=int, default=128, help="Batch size for inversion/sampling")
+    parser.add_argument("--seed", type=int, default=42)
 
-    for TTTT in [10,15,20,25,30,35,40,45,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]:
+    # model arch
+    parser.add_argument("--in_dim", type=int, default=2)
+    parser.add_argument("--time_dim", type=int, default=64)
+    parser.add_argument("--hidden", type=int, default=256)
+    parser.add_argument("--depth", type=int, default=8)
+    parser.add_argument("--out_dim", type=int, default=2)
 
-        parser = argparse.ArgumentParser(description="Batch DDIM Inversion → Resampling for .npy data")
-        parser.add_argument("--npy", type=str, default="smile_data_n65536_scale10_rot0_trans_0_0/train.npy", help="Path to x0 .npy file (shape [N, D])")
-        parser.add_argument("--teacher_ckpt", type=str, default=f"runs/1202_only_diff_loss_B1024_teacher65536_T{TT}/ckpt_student_step600000.pt", help="Path to teacher checkpoint")
-        parser.add_argument("--out_dir", type=str, default=f"inversion_test_1202_teacher_T{TT}/step_{TTTT}", help="Output directory")
-        parser.add_argument("--device", type=str, default="cuda:4")
-        parser.add_argument("--T", type=int, default=TT, help="num_train_timesteps used in training")
-        parser.add_argument("--steps", type=int, default=TTTT, help="DDIM steps (sampling/inversion)")
-        parser.add_argument("--batch_size", type=int, default=NNN, help="Batch size for inversion/sampling")
-        parser.add_argument("--seed", type=int, default=42)
+    # optional normalization (teacher's training stats)
+    parser.add_argument("--norm_json", type=str, default="smile_data_n32_scale2_rot60_trans_50_-20/normalization_stats.json", help="JSON with {'mean': [...], 'std': [...]}")
 
-        # model arch
-        parser.add_argument("--in_dim", type=int, default=2)
-        parser.add_argument("--time_dim", type=int, default=64)
-        parser.add_argument("--hidden", type=int, default=256)
-        parser.add_argument("--depth", type=int, default=8)
-        parser.add_argument("--out_dim", type=int, default=2)
+    args = parser.parse_args()
 
-        # optional normalization (teacher's training stats)
-        # parser.add_argument("--norm_json", type=str, default="smile_data_n32_scale2_rot60_trans_50_-20/normalization_stats.json", help="JSON with {'mean': [...], 'std': [...]}")
-        parser.add_argument("--norm_json", type=str, default="smile_data_n65536_scale10_rot0_trans_0_0/normalization_stats.json", help="JSON with {'mean': [...], 'std': [...]}")
+    set_seed(args.seed)
+    ensure_dir(args.out_dir)
 
-        args = parser.parse_args()
+    device = torch.device(args.device if torch.cuda.is_available() else "cpu")
 
-        set_seed(args.seed)
-        ensure_dir(args.out_dir)
+    # 1) 데이터 로드 (raw space)
+    x0_raw = np.load(args.npy)  # [N, D]
 
-        device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    # x0_raw = x0_raw[:4]
 
-        # 1) 데이터 로드 (raw space)
-        x0_raw = np.load(args.npy)  # [N, D]
+    if x0_raw.ndim != 2:
+        raise ValueError(f"Expected [N, D] array, but got shape {x0_raw.shape}")
+    N, D = x0_raw.shape
+    print(f"Loaded x0 from {args.npy}: shape = {x0_raw.shape}")
 
-        x0_raw = x0_raw[:NNN]
+    # 2) (선택) 정규화
+    use_norm = False
+    mu = sigma = None
+    if args.norm_json and Path(args.norm_json).exists():
+        mu, sigma = load_norm_stats(args.norm_json)
+        if mu.shape[0] != D or sigma.shape[0] != D:
+            raise ValueError(f"norm_json dims {mu.shape}/{sigma.shape} do not match data dim {D}")
+        x0_model_np = normalize_np(x0_raw, mu, sigma).astype(np.float32)
+        use_norm = True
+        print(f"[Norm] using {args.norm_json}")
+    else:
+        x0_model_np = x0_raw.astype(np.float32)
 
-        if x0_raw.ndim != 2:
-            raise ValueError(f"Expected [N, D] array, but got shape {x0_raw.shape}")
-        N, D = x0_raw.shape
-        print(f"Loaded x0 from {args.npy}: shape = {x0_raw.shape}")
+    # teacher 전용 정규화 (teacher raw로 되돌릴 때 사용)
+    mu_teacher, sigma_teacher = load_norm_stats("smile_data_n65536_scale10_rot0_trans_0_0/normalization_stats.json")
 
+    x0_t = torch.from_numpy(x0_model_np).float()
 
-        # 2) (선택) 정규화
-        use_norm = False
-        mu = sigma = None
-        if args.norm_json and Path(args.norm_json).exists():
-            mu, sigma = load_norm_stats(args.norm_json)
-            if mu.shape[0] != D or sigma.shape[0] != D:
-                raise ValueError(f"norm_json dims {mu.shape}/{sigma.shape} do not match data dim {D}")
-            x0_model_np = normalize_np(x0_raw, mu, sigma).astype(np.float32)
-            use_norm = True
-            print(f"[Norm] using {args.norm_json}")
-        else:
-            x0_model_np = x0_raw.astype(np.float32)
+    # 3) 모델 & 스케줄러 준비
+    teacher = load_teacher_model(
+        args.teacher_ckpt, device,
+        in_dim=args.in_dim, time_dim=args.time_dim,
+        hidden=args.hidden, depth=args.depth, out_dim=args.out_dim
+    )
+    teacher.eval()
 
-        # teacher 전용 정규화 (teacher raw로 되돌릴 때 사용)
-        mu_teacher, sigma_teacher = load_norm_stats("smile_data_n65536_scale10_rot0_trans_0_0/normalization_stats.json")
+    ddim = DDIMScheduler(
+        num_train_timesteps=args.T,
+        beta_schedule="linear",
+        prediction_type="epsilon",
+        clip_sample=False,
+        set_alpha_to_one=False,
+        steps_offset=0,
+    )
+    inv = DDIMInverseScheduler.from_config(ddim.config)
 
-        x0_t = torch.from_numpy(x0_model_np).float()
+    # 4) Inversion → Resampling (model space)
+    z_T, x0_rec_model_student = ddim_inversion_and_resample(
+        teacher=teacher,
+        x0=x0_t,
+        ddim=ddim,
+        inv=inv,
+        steps=args.steps,
+        device=device,
+        batch_size=args.batch_size,
+    )
 
-        # 3) 모델 & 스케줄러 준비
-        teacher = load_teacher_model(
-            args.teacher_ckpt, device,
-            in_dim=args.in_dim, time_dim=args.time_dim,
-            hidden=args.hidden, depth=args.depth, out_dim=args.out_dim
-        )
-        teacher.eval()
-
-        ddim = DDIMScheduler(
-            num_train_timesteps=args.T,
-            beta_schedule="linear",
-            prediction_type="epsilon",
-            clip_sample=False,
-            set_alpha_to_one=False,
-            steps_offset=0,
-        )
-        inv = DDIMInverseScheduler.from_config(ddim.config)
-
-
-        # 4) Inversion → Resampling (model space)
-        z_T, x0_rec_model_student = ddim_inversion_and_resample(
-            teacher=teacher,
-            x0=x0_t,
-            ddim=ddim,
-            inv=inv,
-            steps=args.steps,
-            device=device,
-            batch_size=args.batch_size,
-        )
-
-        # 5) 원 스케일 복원 (시각화/저장용)
-        if use_norm:
-            x0_rec_raw_student = denormalize_np(x0_rec_model_student.numpy(), mu, sigma)
-            x0_for_plot = x0_raw
-        else:
-            x0_rec_raw_student = x0_rec_model_student.numpy()
-            x0_for_plot = x0_raw  # (미사용)
+    # 5) 원 스케일 복원 (시각화/저장용)
+    if use_norm:
+        x0_rec_raw_student = denormalize_np(x0_rec_model_student.numpy(), mu, sigma)
+        x0_for_plot = x0_raw
+    else:
+        x0_rec_raw_student = x0_rec_model_student.numpy()
+        x0_for_plot = x0_raw  # (미사용)
 
 
-        png_path = Path(args.out_dir) / "GT_vs_RECON.png"
-        scatter_overlay_png(
-            x0=x0_raw,
-            x0_rec=x0_rec_raw_student,
-            out_png=str(png_path),
-            title=f"GT → DDIM Inversion → DDIM Sampling (steps={args.steps})\n(GT vs student recon)",
-            alpha=0.6,                      # 두 분포 동일 투명도
-            point_size=7.0,
-            seed=args.seed,
-            labels=("GT", "RECON"),
-            idx=None,                       # 전부 그릴 거면 생략 가능
-            color_a="tab:blue",             # 학생 색
-            color_b="tab:orange",           # 티처 색
-            max_points=x0_rec_raw_student.shape[0],  # 모두 그리기 원하면
-        )
-        print(f"Saved figure: {png_path}")
+    png_path = Path(args.out_dir) / "GT_vs_RECON.png"
+    scatter_overlay_png(
+        x0=x0_raw,
+        x0_rec=x0_rec_raw_student,
+        out_png=str(png_path),
+        title=f"GT → DDIM Inversion → DDIM Sampling (steps={args.steps})\n(GT vs student recon)",
+        alpha=0.6,                      # 두 분포 동일 투명도
+        point_size=7.0,
+        seed=args.seed,
+        labels=("GT", "RECON"),
+        idx=None,                       # 전부 그릴 거면 생략 가능
+        color_a="tab:blue",             # 학생 색
+        color_b="tab:orange",           # 티처 색
+        max_points=x0_rec_raw_student.shape[0],  # 모두 그리기 원하면
+    )
 
-        # ===== 공유 인덱스/색 팔레트 생성 =====
-        # 동일 z_T로부터 나온 student/teacher 샘플은 인덱스가 1:1 대응 → 같은 인덱스 = 같은 색
-        shared_idx = choose_indices(N, max_points=min(N, 50000), seed=args.seed)
-        # shared_colors = colors_by_id(shared_idx, cmap_name="tab20")
-        shared_colors = colors_by_id32(shared_idx, alpha=0.85)
-        
-        # 6) Student 단일 분포 (ID 기반, 공유 팔레트)
-        png_path = Path(args.out_dir) / "student_recon.png"
-        scatter_overlay_one_color(
-            x0=x0_rec_raw_student,
-            out_png=str(png_path),
-            title=f"DDIM Inversion→Resampling (steps={args.steps})",
-            model_name="student",
-            color_mode="id",
-            seed=args.seed,
-            idx=shared_idx,
-            colors=shared_colors,
-        )
-        print(f"Saved figure: {png_path}")
+    # ===== 공유 인덱스/색 팔레트 생성 =====
+    # 동일 z_T로부터 나온 student/teacher 샘플은 인덱스가 1:1 대응 → 같은 인덱스 = 같은 색
+    shared_idx = choose_indices(N, max_points=min(N, 50000), seed=args.seed)
+    # shared_colors = colors_by_id(shared_idx, cmap_name="tab20")
+    shared_colors = colors_by_id32(shared_idx, alpha=0.85)
+    
+    # 6) Student 단일 분포 (ID 기반, 공유 팔레트)
+    png_path = Path(args.out_dir) / "student_recon.png"
+    scatter_overlay_one_color(
+        x0=x0_rec_raw_student,
+        out_png=str(png_path),
+        title=f"DDIM Inversion→Resampling (steps={args.steps})",
+        model_name="student",
+        color_mode="id",
+        seed=args.seed,
+        idx=shared_idx,
+        colors=shared_colors,
+    )
+    print(f"Saved figure: {png_path}")
 
-        # 7) Real teacher 로드 & 같은 z_T로 복원
-        real_teacher = load_teacher_model(
-            "ckpt_teacher_T1000_step370000_1021.pt", device,
-            in_dim=args.in_dim, time_dim=args.time_dim,
-            hidden=args.hidden, depth=args.depth, out_dim=args.out_dim
-        )
-        real_teacher.eval()
+    # 7) Real teacher 로드 & 같은 z_T로 복원
+    real_teacher = load_teacher_model(
+        "ckpt_teacher_T1000_step370000_1021.pt", device,
+        in_dim=args.in_dim, time_dim=args.time_dim,
+        hidden=args.hidden, depth=args.depth, out_dim=args.out_dim
+    )
+    real_teacher.eval()
 
-        x0_rec_model_teacher = ddim_resample(
-            teacher=real_teacher,
-            xT=z_T,
-            ddim=ddim,
-            steps=args.steps,
-            device=device,
-            batch_size=args.batch_size,
-        )
+    x0_rec_model_teacher = ddim_resample(
+        teacher=real_teacher,
+        xT=z_T,
+        ddim=ddim,
+        steps=args.steps,
+        device=device,
+        batch_size=args.batch_size,
+    )
 
-        if use_norm:
-            x0_rec_raw_teacher = denormalize_np(x0_rec_model_teacher.numpy(), mu_teacher, sigma_teacher)
-        else:
-            x0_rec_raw_teacher = x0_rec_model_teacher.numpy()
+    if use_norm:
+        x0_rec_raw_teacher = denormalize_np(x0_rec_model_teacher.numpy(), mu_teacher, sigma_teacher)
+    else:
+        x0_rec_raw_teacher = x0_rec_model_teacher.numpy()
 
-        # 8) Teacher 단일 분포 (ID 기반, 공유 팔레트)
-        png_path = Path(args.out_dir) / "teacher_recon.png"
-        scatter_overlay_one_color(
-            x0=x0_rec_raw_teacher,
-            out_png=str(png_path),
-            title=f"DDIM Inversion→Resampling (steps={args.steps})",
-            model_name="teacher",
-            color_mode="id",
-            seed=args.seed,
-            idx=shared_idx,
-            colors=shared_colors,
-        )
-        print(f"Saved figure: {png_path}")
+    # 8) Teacher 단일 분포 (ID 기반, 공유 팔레트)
+    png_path = Path(args.out_dir) / "teacher_recon.png"
+    scatter_overlay_one_color(
+        x0=x0_rec_raw_teacher,
+        out_png=str(png_path),
+        title=f"DDIM Inversion→Resampling (steps={args.steps})",
+        model_name="teacher",
+        color_mode="id",
+        seed=args.seed,
+        idx=shared_idx,
+        colors=shared_colors,
+    )
+    print(f"Saved figure: {png_path}")
 
-        # 9) 동일 노이즈로 teacher vs student 비교
-        noise_zT = torch.randn((512, *z_T.shape[1:]), device=z_T.device, dtype=z_T.dtype)
-        teacher_rec_model = ddim_resample(
-            teacher=real_teacher,
-            xT=noise_zT,
-            ddim=ddim,
-            steps=args.steps,
-            device=device,
-            batch_size=args.batch_size,
-        )
-        student_rec_model = ddim_resample(
-            teacher=teacher,
-            xT=noise_zT,
-            ddim=ddim,
-            steps=args.steps,
-            device=device,
-            batch_size=args.batch_size,
-        )
+    # 9) 동일 노이즈로 teacher vs student 비교
+    noise_zT = torch.randn((512, *z_T.shape[1:]), device=z_T.device, dtype=z_T.dtype)
+    teacher_rec_model = ddim_resample(
+        teacher=real_teacher,
+        xT=noise_zT,
+        ddim=ddim,
+        steps=args.steps,
+        device=device,
+        batch_size=args.batch_size,
+    )
+    student_rec_model = ddim_resample(
+        teacher=teacher,
+        xT=noise_zT,
+        ddim=ddim,
+        steps=args.steps,
+        device=device,
+        batch_size=args.batch_size,
+    )
 
-        if use_norm:
-            teacher_rec_raw = denormalize_np(teacher_rec_model.numpy(), mu_teacher, sigma_teacher)
-            student_rec_raw = denormalize_np(student_rec_model.numpy(), mu, sigma)
-        else:
-            teacher_rec_raw = teacher_rec_model.numpy()
-            student_rec_raw = student_rec_model.numpy()
+    if use_norm:
+        teacher_rec_raw = denormalize_np(teacher_rec_model.numpy(), mu_teacher, sigma_teacher)
+        student_rec_raw = denormalize_np(student_rec_model.numpy(), mu, sigma)
+    else:
+        teacher_rec_raw = teacher_rec_model.numpy()
+        student_rec_raw = student_rec_model.numpy()
 
-        # 10) 동일 노이즈 teacher vs student (ID 기반, 공유 팔레트)
-        png_path = Path(args.out_dir) / "same_noise_teacher_vs_student.png"
-        scatter_overlay_png(
-            x0=student_rec_raw,
-            x0_rec=teacher_rec_raw,
-            out_png=str(png_path),
-            title=f"Same Noise → DDIM Resampling (steps={args.steps})\n(student vs teacher)",
-            alpha=0.6,                      # 두 분포 동일 투명도
-            point_size=7.0,
-            seed=args.seed,
-            labels=("student", "teacher"),
-            idx=None,                       # 전부 그릴 거면 생략 가능
-            color_a="tab:blue",             # 학생 색
-            color_b="tab:orange",           # 티처 색
-            max_points=student_rec_raw.shape[0],  # 모두 그리기 원하면
-        )
+    # 10) 동일 노이즈 teacher vs student (ID 기반, 공유 팔레트)
+    png_path = Path(args.out_dir) / "same_noise_teacher_vs_student.png"
+    scatter_overlay_png(
+        x0=student_rec_raw,
+        x0_rec=teacher_rec_raw,
+        out_png=str(png_path),
+        title=f"Same Noise → DDIM Resampling (steps={args.steps})\n(student vs teacher)",
+        alpha=0.6,                      # 두 분포 동일 투명도
+        point_size=7.0,
+        seed=args.seed,
+        labels=("student", "teacher"),
+        idx=None,                       # 전부 그릴 거면 생략 가능
+        color_a="tab:blue",             # 학생 색
+        color_b="tab:orange",           # 티처 색
+        max_points=student_rec_raw.shape[0],  # 모두 그리기 원하면
+    )
 
-        print(f"Saved figure: {png_path}")
+    print(f"Saved figure: {png_path}")
 
 
-        side_by_side_png = Path(args.out_dir) / "student_teacher_side_by_side.png"
-        scatter_side_by_side(
-            x_left=x0_rec_raw_student,
-            x_right=x0_rec_raw_teacher,
-            out_png=str(side_by_side_png),
-            titles=("student recon x₀", "teacher recon x₀"),
-            main_title=f"DDIM Inversion→Resampling (steps={args.steps}) – student vs teacher",
-            color_mode="id",
-            seed=args.seed,
-            idx=shared_idx,
-            colors=shared_colors,
-        )
-        print(f"Saved figure: {side_by_side_png}")
+    side_by_side_png = Path(args.out_dir) / "student_teacher_side_by_side.png"
+    scatter_side_by_side(
+        x_left=x0_rec_raw_student,
+        x_right=x0_rec_raw_teacher,
+        out_png=str(side_by_side_png),
+        titles=("student recon x₀", "teacher recon x₀"),
+        main_title=f"DDIM Inversion→Resampling (steps={args.steps}) – student vs teacher",
+        color_mode="id",
+        seed=args.seed,
+        idx=shared_idx,
+        colors=shared_colors,
+    )
+    print(f"Saved figure: {side_by_side_png}")
 
 
 
 
-        # 동일 노이즈 동일 색
-        NN=32
-        noise_zT = torch.randn((NN, *z_T.shape[1:]), device=z_T.device, dtype=z_T.dtype)
-        x0_rec_model_teacher_ = ddim_resample(
-            teacher=real_teacher,
-            xT=noise_zT,
-            ddim=ddim,
-            steps=args.steps,
-            device=device,
-            batch_size=args.batch_size,
-        )
-        x0_rec_model_student_ = ddim_resample(
-            teacher=teacher,
-            xT=noise_zT,
-            ddim=ddim,
-            steps=args.steps,
-            device=device,
-            batch_size=args.batch_size,
-        )
-        if use_norm:
-            x0_rec_raw_teacher_ = denormalize_np(x0_rec_model_teacher_.numpy(), mu_teacher, sigma_teacher)
-            x0_rec_raw_student_ = denormalize_np(x0_rec_model_student_.numpy(), mu, sigma)
-        else:
-            x0_rec_raw_teacher_ = x0_rec_model_teacher_.numpy()
-            x0_rec_raw_student_ = x0_rec_model_student_.numpy()
+    # 동일 노이즈 동일 색
+    NN=32
+    noise_zT = torch.randn((NN, *z_T.shape[1:]), device=z_T.device, dtype=z_T.dtype)
+    x0_rec_model_teacher_ = ddim_resample(
+        teacher=real_teacher,
+        xT=noise_zT,
+        ddim=ddim,
+        steps=args.steps,
+        device=device,
+        batch_size=args.batch_size,
+    )
+    x0_rec_model_student_ = ddim_resample(
+        teacher=teacher,
+        xT=noise_zT,
+        ddim=ddim,
+        steps=args.steps,
+        device=device,
+        batch_size=args.batch_size,
+    )
+    if use_norm:
+        x0_rec_raw_teacher_ = denormalize_np(x0_rec_model_teacher_.numpy(), mu_teacher, sigma_teacher)
+        x0_rec_raw_student_ = denormalize_np(x0_rec_model_student_.numpy(), mu, sigma)
+    else:
+        x0_rec_raw_teacher_ = x0_rec_model_teacher_.numpy()
+        x0_rec_raw_student_ = x0_rec_model_student_.numpy()
 
 
 
-        shared_idx_ = choose_indices(NN, max_points=min(N, 50000), seed=args.seed)
-        # shared_colors_ = colors_by_id(shared_idx_, cmap_name="tab20")
-        shared_colors_ = colors_by_id32(shared_idx_, alpha=0.85)
+    shared_idx_ = choose_indices(NN, max_points=min(N, 50000), seed=args.seed)
+    # shared_colors_ = colors_by_id(shared_idx_, cmap_name="tab20")
+    shared_colors_ = colors_by_id32(shared_idx_, alpha=0.85)
 
-        side_by_side_png = Path(args.out_dir) / "same_pure_noise_same_color_student_teacher.png"
-        scatter_side_by_side(
-            x_left=x0_rec_raw_student_,
-            x_right=x0_rec_raw_teacher_,
-            out_png=str(side_by_side_png),
-            titles=("student recon x₀", "teacher recon x₀"),
-            main_title=f"Same Gaussian Noise → DDIMsampling (steps={args.steps}) – teacher vs student",
-            color_mode="id",
-            seed=args.seed,
-            idx=shared_idx_,
-            colors=shared_colors_,
-        )
-        print(f"Saved figure: {side_by_side_png}")
+    side_by_side_png = Path(args.out_dir) / "same_pure_noise_same_color_student_teacher.png"
+    scatter_side_by_side(
+        x_left=x0_rec_raw_student_,
+        x_right=x0_rec_raw_teacher_,
+        out_png=str(side_by_side_png),
+        titles=("student recon x₀", "teacher recon x₀"),
+        main_title=f"Same Gaussian Noise → DDIMsampling (steps={args.steps}) – teacher vs student",
+        color_mode="id",
+        seed=args.seed,
+        idx=shared_idx_,
+        colors=shared_colors_,
+    )
+    print(f"Saved figure: {side_by_side_png}")
 
 
 
-        # 11) 재구성 오차 리포트
-        mse_model = float(((x0_rec_model_student - x0_t).pow(2).mean()).cpu().item())
-        print(f"[Reconstruction MSE | model space] {mse_model:.6f}")
-        if use_norm:
-            mse_raw = float(((torch.from_numpy(x0_rec_raw_student) - torch.from_numpy(x0_raw)).pow(2).mean()).item())
-            print(f"[Reconstruction MSE | raw space]   {mse_raw:.6f}")
+    # 11) 재구성 오차 리포트
+    mse_model = float(((x0_rec_model_student - x0_t).pow(2).mean()).cpu().item())
+    print(f"[Reconstruction MSE | model space] {mse_model:.6f}")
+    if use_norm:
+        mse_raw = float(((torch.from_numpy(x0_rec_raw_student) - torch.from_numpy(x0_raw)).pow(2).mean()).item())
+        print(f"[Reconstruction MSE | raw space]   {mse_raw:.6f}")
 
 if __name__ == "__main__":
     main()

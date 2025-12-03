@@ -18,15 +18,22 @@ from torch.utils.data import Dataset, DataLoader
 import itertools
 # ===================== CONFIG ===================== #
 
-W_RKD = 0.1
-W_INV = 0.1
-W_INVINV = 1.0
-W_FID = 0.0001
-W_DIFF = 0.0
-CUDA_NUM = 2
+# W_RKD = 0.08
+# W_INV = 0.1
+# W_INVINV = 1.0
+# W_FID = 0.0005
+# W_SAME = 0.0
+
+W_RKD = 0.08
+W_INV = 0.0
+W_INVINV = 0.0
+W_FID = 0.0
+W_SAME = 0.0
+
+CUDA_NUM = 5
 BATCH_SIZE = 1024
 
-WANDB_NAME=f"1107_lr1e4_n32_b{BATCH_SIZE}_ddim_50_150_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}"
+WANDB_NAME=f"1202_lr1e4_n32_b{BATCH_SIZE}_ddim_50_150_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0"
 
 
 CONFIG = {
@@ -34,21 +41,23 @@ CONFIG = {
     "device": f"cuda:{CUDA_NUM}",
     "out_dir": f"runs/{WANDB_NAME}",
     # teacher / student
-    "teacher_ckpt": "ckpt_teacher_T1000_step370000_1021.pt", 
+    "teacher_ckpt": f"runs/1202_only_diff_loss_B1024_teacher65536_T100/ckpt_student_step1000000.pt", 
     "student_init_ckpt": "",                     
     # "student_init_ckpt": "runs/1025_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.0_invW0.0_invinv_W1.0_diffW0.1/ckpt_student_step200000.pt",                     
     "resume_student_ckpt": f"",        
-    "teacher_data_stats": "smile_data_n8192_scale10_rot0_trans_0_0/teacher_normalization_stats.json",
+    "teacher_data_stats": "smile_data_n65536_scale10_rot0_trans_0_0/normalization_stats.json",
     "student_data_stats": "smile_data_n32_scale2_rot60_trans_50_-20/normalization_stats.json",
 
     # diffusion loss 가중치
     "W_RKD": W_RKD,
     "W_INV": W_INV,                               # ε-pred MSE 가중치
     "W_INVINV": W_INVINV,                               # ε-pred MSE 가중치
-    "W_DIFF": W_DIFF,                               # ε-pred MSE 가중치
     "W_FID": W_FID,                               # ε-pred MSE 가중치
+    "W_SAME": W_SAME,
+    "same_mode": "mean",   # 또는 "last" 로 바꿔가며 실험
 
-    "rkd_ddim_steps_to_t": 100,   # t_sel까지 최대 몇 번의 DDIM 전이만 사용할지
+
+    "rkd_ddim_steps_to_t": 40,   # t_sel까지 최대 몇 번의 DDIM 전이만 사용할지
 
     "batch_size": BATCH_SIZE,
     "num_noises": 8192, 
@@ -58,7 +67,7 @@ CONFIG = {
     "regen_noise_pool": False,      # True면 항상 새로 만듦
     
     # schedule / time
-    "T": 1000,                 # total diffusion steps (timesteps = 0..T-1)
+    "T": 50,                 # total diffusion steps (timesteps = 0..T-1)
 
     "seed": 42,
     # RKD weights
@@ -78,7 +87,7 @@ CONFIG = {
     "ddim_eta": 0.0,
     # wandb
     "use_wandb": True,
-    "wandb_project": "RKD-DKDM-AICA-1107",
+    "wandb_project": "RKD-DKDM-AICA-1202",
     "wandb_run_name": WANDB_NAME,
 }
 
@@ -402,8 +411,9 @@ def sample_ddim_student(
         eps = model(x_in, t_b)
         out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
         x = out.prev_sample
+        pred_x0 = out.pred_original_sample
 
-        xs.append(x) 
+        xs.append(pred_x0) 
 
         if t_int <= t_sel:
             break
@@ -431,8 +441,9 @@ def sample_ddim_teacher(
         eps = model(x_in, t_b)
         out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
         x = out.prev_sample
+        pred_x0 = out.pred_original_sample
 
-        xs.append(x) 
+        xs.append(pred_x0) 
 
         if t_int <= t_sel:
             break
@@ -459,8 +470,9 @@ def sample_ddim_teacher_grad(
         eps = model(x_in, t_b)
         out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
         x = out.prev_sample
+        pred_x0 = out.pred_original_sample
 
-        xs.append(x) 
+        xs.append(pred_x0) 
 
         if t_int <= t_sel:
             break
@@ -488,8 +500,10 @@ def sample_ddim_inv_student(
         t_b = torch.full((x.shape[0],), int(t), device=device, dtype=torch.long)
         latent_in = inv.scale_model_input(x, t)
         eps = model(latent_in, t_b)
-        x = inv.step(eps, t, x).prev_sample
-        xs.append(x) 
+        out = inv.step(eps, t, x)
+        x = out.prev_sample
+        pred_x0 = out.pred_original_sample
+        xs.append(pred_x0) 
 
     return xs  
 
@@ -525,6 +539,7 @@ class MLPDenoiser(nn.Module):
 
 def build_schedulers(num_train_timesteps: int):
     train_sched = DDPMScheduler(
+        beta_schedule="linear",
         num_train_timesteps=num_train_timesteps,
         clip_sample=False,
     )
@@ -738,8 +753,8 @@ def train_student_uniform_xt(cfg: Dict):
         # possible_steps = [200, 195, 191, 190, 187, 174, 161, 157, 148, 135]
         # ddim_steps = random.choice(possible_steps)
 
-        ddim_steps = int(np.random.randint(50,151))
-
+        ddim_steps = int(np.random.randint(30,51))
+        # ddim_steps = 151
 
         with torch.no_grad():
             xt_T_seq = sample_ddim_teacher(
@@ -756,11 +771,10 @@ def train_student_uniform_xt(cfg: Dict):
         )
 
 
+        ##################  STUDENT DOMAIN DATA ##################
         x0_batch = next_student_batch()  # shape (B_s, 2)
         student.train()
 
-        # ===================== STUDENT DOMAIN DATA =====================
-        # 학생 도메인 x0 배치 가져오기 (정규화 완료 상태)        
         S_inv_z_seq = sample_ddim_inv_student(
             model=student, sample_scheduler=ddim, x0=x0_batch, 
             device=device, sample_steps=ddim_steps,
@@ -772,77 +786,128 @@ def train_student_uniform_xt(cfg: Dict):
             eta=float(cfg.get("ddim_eta", 0.0)), t_sel=0,
         )
 
-        ##################  RKD LOSSES ##################
+       ##################  RKD LOSSES ##################
 
         rkd_loss = torch.tensor(0.0, device=device)
         inversion_loss = torch.tensor(0.0, device=device)
         invinv_loss = torch.tensor(0.0, device=device)
         fid_loss = torch.tensor(0.0, device=device)
+        x0_S_same_loss = torch.tensor(0.0, device=device)
 
-        diff_loss = torch.tensor(0.0, device=device)
-        
+        rkd_s_d_list, rkd_t_d_list = [], []
 
-        for i, (xt_S, xt_T, xt_S_inv, xt_T_inv) in enumerate(zip(xt_S_seq, xt_T_seq, reversed(S_inv_z_seq[:-1]), x0_inv_T)):
+        xt_T_x0 = xt_T_seq[-1]
 
+        xt_S_seq_denorm = [denormalize_torch(x, mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+        xt_T_x0_denorm = denormalize_torch(xt_T_x0, mu_teacher_tensor, sigma_teacher_tensor)
+        x0_batch_denorm = denormalize_torch(x0_batch, mu_student_tensor, sigma_student_tensor)
+        x0_inv_T_denorm = denormalize_torch(x0_inv_T[-1], mu_teacher_tensor, sigma_teacher_tensor)
 
-            xt_S = denormalize_torch(xt_S, mu_student_tensor, sigma_student_tensor)
-            xt_T = denormalize_torch(xt_T, mu_teacher_tensor, sigma_teacher_tensor)
-            xt_S_inv = denormalize_torch(xt_S_inv, mu_student_tensor, sigma_student_tensor)
-            xt_T_inv = denormalize_torch(xt_T_inv, mu_teacher_tensor, sigma_teacher_tensor)
+        # --- RKD (전 타임스텝) ---  (W_RKD != 0일 때만 계산)
+        if cfg["W_RKD"] != 0:
+            for xt_S in xt_S_seq_denorm:
+                rkd_s_d = torch.pdist(xt_S, p=2).clamp_min(1e-12)
+                rkd_t_d = torch.pdist(xt_T_x0_denorm, p=2).clamp_min(1e-12)
+                rkd_s_d_list.append(rkd_s_d)
+                rkd_t_d_list.append(rkd_t_d)
 
-            # RKD
-            rkd_s_d = torch.pdist(xt_S, p=2).clamp_min(1e-12)           
-            rkd_t_d = torch.pdist(xt_T, p=2).clamp_min(1e-12)  
-            # INV
-            s_full = torch.cdist(xt_S, xt_S_inv, p=2)  
-            t_full = torch.cdist(xt_T, xt_T_inv, p=2)  
-            inv_s_d = s_full.reshape(-1).clamp_min(1e-12)            
+        # --- INV: x_t^S vs x_0^S / x_0^{T,inv} --- (W_INV != 0일 때만)
+        inv_s_d = inv_t_d = None
+        if cfg["W_INV"] != 0:
+            s_full = torch.cdist(xt_S_seq_denorm[-1], x0_batch_denorm, p=2)
+            t_full = torch.cdist(xt_T_x0_denorm, x0_inv_T_denorm, p=2)
+            inv_s_d = s_full.reshape(-1).clamp_min(1e-12)
             inv_t_d = t_full.reshape(-1).clamp_min(1e-12)
-            # INVINV
-            invinv_s_d = torch.pdist(xt_S_inv, p=2).clamp_min(1e-12)           
-            invinv_t_d = torch.pdist(xt_T_inv, p=2).clamp_min(1e-12)  
+        # --- INVINV: x_0^S vs x_0^{T,inv} --- (W_INVINV != 0일 때만)
+        invinv_s_d = invinv_t_d = None
+        if cfg["W_INVINV"] != 0:
+            invinv_s_d = torch.pdist(x0_batch_denorm, p=2).clamp_min(1e-12)
+            invinv_t_d = torch.pdist(x0_inv_T_denorm, p=2).clamp_min(1e-12)
 
-            # mean normalization 
-            # teacher mean
-            teacher_sum = rkd_t_d.sum() + inv_t_d.sum() + invinv_t_d.sum()
-            teacher_cnt = rkd_t_d.numel() + inv_t_d.numel() + invinv_t_d.numel()
-            teacher_mean = teacher_sum / teacher_cnt  
-            # student mean
-            student_sum = rkd_s_d.sum() + inv_s_d.sum() + invinv_s_d.sum()
-            student_cnt = rkd_s_d.numel() + inv_s_d.numel() + invinv_s_d.numel()
-            student_mean = student_sum / student_cnt  
+        # --- mean normalization (글로벌: 활성화된 loss들만) ---
+        student_parts = []
+        teacher_parts = []
 
-            rkd_s_d = rkd_s_d / student_mean
-            rkd_t_d = rkd_t_d / teacher_mean
+        if cfg["W_RKD"] != 0 and len(rkd_s_d_list) > 0:
+            rkd_s_d_all = torch.cat(rkd_s_d_list, dim=0)
+            rkd_t_d_all = torch.cat(rkd_t_d_list, dim=0)
+            student_parts.append(rkd_s_d_all)
+            teacher_parts.append(rkd_t_d_all)
+        if cfg["W_INV"] != 0 and inv_s_d is not None:
+            student_parts.append(inv_s_d)
+            teacher_parts.append(inv_t_d)
+        if cfg["W_INVINV"] != 0 and invinv_s_d is not None:
+            student_parts.append(invinv_s_d)
+            teacher_parts.append(invinv_t_d)
+            
+        if len(student_parts) > 0:
+            student_all = torch.cat(student_parts, dim=0)
+            teacher_all = torch.cat(teacher_parts, dim=0)
+            student_mean = student_all.mean()
+            teacher_mean = teacher_all.mean()
+        else:
+            student_mean = torch.tensor(1.0, device=device)
+            teacher_mean = torch.tensor(1.0, device=device)
+
+        # --- 실제 사용하는 애들만 정규화 ---
+        if cfg["W_RKD"] != 0:
+            rkd_s_d_list = [d / student_mean for d in rkd_s_d_list]
+            rkd_t_d_list = [d / teacher_mean for d in rkd_t_d_list]
+        if cfg["W_INV"] != 0 and inv_s_d is not None:
             inv_s_d = inv_s_d / student_mean
             inv_t_d = inv_t_d / teacher_mean
+        if cfg["W_INVINV"] != 0 and invinv_s_d is not None:
             invinv_s_d = invinv_s_d / student_mean
             invinv_t_d = invinv_t_d / teacher_mean
 
-            # FID
-            fid_student = fid_gaussian_torch(xt_S, xt_S_inv)
-            fid_teacher = fid_gaussian_torch(xt_T, xt_T_inv) 
+        # --- FID  ---
+        if cfg["W_FID"] != 0:
+            fid_student = fid_gaussian_torch(xt_S_seq_denorm[-1], x0_batch_denorm)
+            fid_teacher = fid_gaussian_torch(xt_T_x0_denorm, x0_inv_T_denorm)
+        else:
+            fid_student = torch.tensor(0.0, device=device)
+            fid_teacher = torch.tensor(0.0, device=device)
 
-            # loss
-            rkd_loss += cfg["W_RKD"] * F.mse_loss(rkd_s_d, rkd_t_d, reduction="mean") / len(xt_S_seq)
-            inversion_loss += cfg["W_INV"] * F.mse_loss(inv_s_d, inv_t_d, reduction="mean") / len(xt_S_seq)
-            invinv_loss += cfg["W_INVINV"] * F.mse_loss(invinv_s_d, invinv_t_d, reduction="mean") / len(xt_S_seq)
-            fid_loss += cfg["W_FID"] * (fid_student + fid_teacher) / len(xt_S_seq)
+        # --- SAME (trajectory 수축 regularizer) ---
+        if cfg["W_SAME"] != 0:
+            xt_S_stack = torch.stack(xt_S_seq_denorm, dim=0)   # [K, B, D]
+            K = xt_S_stack.size(0)
+            if cfg.get("same_mode", "mean") == "mean":
+                # (1) mean 기준: 모든 timestep이 서로 가깝게
+                xt_S_time_mean = xt_S_stack.mean(dim=0, keepdim=True)
+                xt_S_time_mean_expand = xt_S_time_mean.expand_as(xt_S_stack)
 
+                same_raw = F.mse_loss(
+                    xt_S_stack,              # [K, B, D]
+                    xt_S_time_mean_expand,   # [K, B, D]
+                    reduction="mean",
+                )
+                x0_S_same_loss = cfg["W_SAME"] * same_raw
+            elif cfg["same_mode"] == "last":
+                # (2) last 기준: 마지막 pred_x0이 anchor
+                ref = xt_S_stack[-1].detach()
+                xt_S_except_last = xt_S_stack[:-1]
+                ref_expand = ref.unsqueeze(0).expand_as(xt_S_except_last)
 
+                same_raw = F.mse_loss(
+                    xt_S_except_last,   # [K-1, B, D]
+                    ref_expand,         # [K-1, B, D]
+                    reduction="mean",
+                )
+                x0_S_same_loss = cfg["W_SAME"] * same_raw
 
-        # # ===================== NEW: diffusion ε-MSE loss =====================
-        # t_b_s = torch.randint(low=0, high=T, size=(x0_batch.shape[0],), device=device, dtype=torch.long)
-        # eps = torch.randn_like(x0_batch)    
-        # x_t_for_diff = train_sched.add_noise(x0_batch, eps, t_b_s)  # q(x_t|x0, ε, t)
-        # eps_pred = student(x_t_for_diff, t_b_s)  # prediction_type='epsilon'
-
-        # diff_loss += cfg["W_DIFF"] * F.mse_loss(eps_pred, eps, reduction="mean")
-        # # ===============================
-
-
-        ################## TOTAL LOSS ##################
-        loss = rkd_loss + inversion_loss + invinv_loss + fid_loss + diff_loss
+        # losses
+        if cfg["W_RKD"] != 0:
+            for (rkd_s_d, rkd_t_d) in zip(rkd_s_d_list, rkd_t_d_list):
+                rkd_loss += cfg["W_RKD"] * F.mse_loss(rkd_s_d, rkd_t_d, reduction="mean") / len(xt_S_seq)
+        if cfg["W_INV"] != 0 and inv_s_d is not None:
+            inversion_loss += cfg["W_INV"] * F.mse_loss(inv_s_d, inv_t_d, reduction="mean")
+        if cfg["W_INVINV"] != 0 and invinv_s_d is not None:
+            invinv_loss += cfg["W_INVINV"] * F.mse_loss(invinv_s_d, invinv_t_d, reduction="mean")
+        if cfg["W_FID"] != 0:
+            fid_loss += cfg["W_FID"] * (fid_student + fid_teacher)
+        # TOTAL
+        loss = rkd_loss + inversion_loss + invinv_loss + fid_loss + x0_S_same_loss
 
 
         opt.zero_grad()
@@ -852,8 +917,8 @@ def train_student_uniform_xt(cfg: Dict):
         opt.step()
 
         # if (step_i % max(1, total_steps // 20) == 0) or (step_i == 1):
-        if (step_i % 5 == 0) or (step_i == 1):
-            print(f"[step {step_i:06d}] rkd={rkd_loss.item():.6f}  inv={inversion_loss.item():.6f}   invinv={invinv_loss.item():.6f}  fid_loss={fid_loss.item():.6f}  total={loss.item():.6f}")
+        if (step_i % 100 == 0) or (step_i == 1):
+            print(f"[step {step_i:06d}] rkd={rkd_loss.item():.6f}  x0_S_same={x0_S_same_loss.item():.6f}  inv={inversion_loss.item():.6f}   invinv={invinv_loss.item():.6f}  fid_T_loss={fid_teacher.item():.6f}  fid_S_loss={fid_student.item():.6f}  fid_loss={fid_loss.item():.6f}  total={loss.item():.6f}")
 
 
         if cfg["use_wandb"]:
@@ -862,10 +927,10 @@ def train_student_uniform_xt(cfg: Dict):
                 "t": t_sel,
                 "loss/total": float(loss),
                 "loss/rkd": float(rkd_loss),
+                "loss/same": float(x0_S_same_loss),
                 "loss/inv": float(inversion_loss),
                 "loss/invinv": float(invinv_loss),
                 "loss/fid": float(fid_loss),
-                "loss/diff_loss": float(diff_loss),
                 "lr": opt.param_groups[0]["lr"],
             }, step=step_i)
 
@@ -873,11 +938,12 @@ def train_student_uniform_xt(cfg: Dict):
         if cfg["use_wandb"]:
             wandb.log({
                 "loss_raw/rkd": float(rkd_loss) / cfg["W_RKD"] if cfg["W_RKD"] != 0 else 0.0,
+                "loss_raw/same": float(x0_S_same_loss) / cfg["W_SAME"] if cfg["W_SAME"] != 0 else 0.0,
                 "loss_raw/inv": float(inversion_loss) / cfg["W_INV"] if cfg["W_INV"] != 0 else 0.0,
                 "loss_raw/invinv": float(invinv_loss) / cfg["W_INVINV"] if cfg["W_INVINV"] != 0 else 0.0,
                 "loss_raw/fid": float(fid_loss) / cfg["W_FID"] if cfg["W_FID"] != 0 else 0.0,
-                "loss_raw/diff_loss": float(diff_loss) / cfg["W_DIFF"] if cfg["W_DIFF"] != 0 else 0.0
             }, step=step_i)
+
 
         # 7) (옵션) 시각화: 그대로 유지 (원 코드와 동일)
         if (step_i % cfg["vis_interval_epochs"] == 0) or (step_i == total_steps):

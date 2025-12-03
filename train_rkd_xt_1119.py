@@ -520,6 +520,7 @@ class MLPDenoiser(nn.Module):
 
 def build_schedulers(num_train_timesteps: int):
     train_sched = DDPMScheduler(
+        beta_schedule="linear",
         num_train_timesteps=num_train_timesteps,
         clip_sample=False,
     )

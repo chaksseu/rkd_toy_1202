@@ -23,13 +23,13 @@ import itertools
 # WANDB_NAME=f"1002_rkd_xt_b512_init_full_diff_loss_w100"0
 # WANDB_NAME=f"1002_rkd_xt_b512_init_full"
 
-TT = 400
-WANDB_NAME=f"1202_only_diff_loss_B256_teacher65536_T{TT}"
+TT = 20
+WANDB_NAME=f"1202_only_diff_loss_B1024_teacher65536_T{TT}"
 # WANDB_NAME=f"1002_only_diff_loss_student16"
 
 CONFIG = {
     # I/O
-    "device": f"cuda:5",
+    "device": f"cuda:6",
     "out_dir": f"runs/{WANDB_NAME}",
     # teacher / student
     "teacher_ckpt": "ckpt_teacher_T1000_step370000_1021.pt",  # REQUIRED
@@ -41,7 +41,7 @@ CONFIG = {
     # diffusion loss 가중치
     "W_DIFF": 1.0,                               # ε-pred MSE 가중치
 
-    "batch_size": 256,
+    "batch_size": 1024,
     "num_noises": 8192, 
     "epochs_total": 1000000,          # 총 스텝 수 (기존 epochs_per_stage 대신 사용)
 
@@ -65,7 +65,7 @@ CONFIG = {
     # optim
     "lr": 1e-4, "weight_decay": 0.0, "max_grad_norm": 1.0,
     # sampling viz
-    "vis_interval_epochs": 20000,
+    "vis_interval_epochs": 50000,
     "n_vis": 8192,       # 경로를 수집/표시할 noise 개수
     "ddim_steps": 25,
     "ddim_eta": 0.0,
@@ -80,7 +80,7 @@ CONFIG.update({
     # "student_data_path": "smile_data_n16_scale2_rot60_trans_50_-20/train.npy",   # 혹은 .csv
     "student_data_path": "smile_data_n65536_scale10_rot0_trans_0_0/train.npy",   # 혹은 .csv
     "student_data_format": "npy",                # "npy" | "csv"
-    "student_dataset_batch_size": 256,          # 없으면 batch_size 사용
+    "student_dataset_batch_size": 1024,          # 없으면 batch_size 사용
 })
 
 # ===================== UTILS ===================== #
@@ -511,7 +511,7 @@ class MLPDenoiser(nn.Module):
 def build_schedulers(num_train_timesteps: int):
     train_sched = DDPMScheduler(
         num_train_timesteps=num_train_timesteps,
-        beta_schedule="squaredcos_cap_v2",
+        beta_schedule="linear",
         clip_sample=False,
     )
     train_sched.config.prediction_type = "epsilon"

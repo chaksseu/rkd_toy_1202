@@ -65,7 +65,7 @@ class MLPDenoiser(nn.Module):
 def build_schedulers(num_train_timesteps: int):
     train_sched = DDPMScheduler(
         num_train_timesteps=num_train_timesteps,
-        beta_schedule="squaredcos_cap_v2",
+        beta_schedule="linear",
         clip_sample=False,
     )
     train_sched.config.prediction_type = "epsilon"
@@ -133,24 +133,24 @@ def sample_x0_ddim(model: nn.Module, scheduler: DDIMScheduler, num_samples: int,
 
 # -------------------- Main -------------------- #
 
-
+# runs/1202_only_diff_loss_B1024_teacher65536_T{TT}
 
 def main():
-    TT = 50
+    TT = 100
     
-    for DDIM_STEP in [10,15,20,25,30,35,40,45,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]:
+    for DDIM_STEP in [1,2,5,10,15,20,25,30,35,40,45,50,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200]:
         # DDIM_STEP = TT // 4
 
         p = argparse.ArgumentParser()
-        p.add_argument("--ckpt", default=f"runs/1202_only_diff_loss_B1024_teacher65536_T{TT}/ckpt_student_step680000.pt", type=str, help="Path to model checkpoint (.pt)")
-        p.add_argument("--norm-stats", default="smile_data_n65536_scale10_rot0_trans_0_0/normalization_stats.json", type=str, help="Path to teacher_normalization_stats.json")
-        p.add_argument("--out", default=f"vis_ddim_sample/vis_ddim_teacher_T{TT}", type=str, help="Output directory for PNG")
+        p.add_argument("--ckpt", default=f"runs/1202_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0001_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step050000.pt", type=str, help="Path to model checkpoint (.pt)")
+        p.add_argument("--norm-stats", default="smile_data_n32_scale2_rot60_trans_50_-20/normalization_stats.json", type=str, help="Path to teacher_normalization_stats.json")
+        p.add_argument("--out", default=f"vis_ddim_sample/vis_ddim_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0001", type=str, help="Output directory for PNG")
         p.add_argument("--T", default=TT, type=int, help="Training total diffusion steps (0..T-1)")
         p.add_argument("--ddim-steps", default=DDIM_STEP, type=int, help="Number of DDIM inference steps")
         p.add_argument("--eta", default=0.0, type=float, help="DDIM eta (0 = deterministic)")
         p.add_argument("--num-samples", default=8192, type=int, help="Number of samples")
         p.add_argument("--seed", default=42, type=int)
-        p.add_argument("--device", default="cuda:0", type=str)
+        p.add_argument("--device", default="cuda:7", type=str)
         p.add_argument("--dim", default=2, type=int)
         p.add_argument("--time-dim", default=64, type=int)
         p.add_argument("--hidden", default=256, type=int)

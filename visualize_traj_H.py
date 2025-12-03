@@ -233,7 +233,7 @@ class MLPDenoiser(nn.Module):
 
 # ===================== SCHEDULERS ===================== #
 def build_schedulers(num_train_timesteps: int):
-    train_sched = DDPMScheduler(num_train_timesteps=num_train_timesteps, clip_sample=False)
+    train_sched = DDPMScheduler(num_train_timesteps=num_train_timesteps, clip_sample=False, beta_schedule="linear")
     train_sched.config.prediction_type = "epsilon"
     sample_sched = DDIMScheduler.from_config(train_sched.config)
     sample_sched.config.clip_sample = False
