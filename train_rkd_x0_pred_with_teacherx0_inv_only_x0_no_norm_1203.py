@@ -22,7 +22,7 @@ W_RKD = 0.08
 W_INV = 0.1
 W_INVINV = 1.0
 W_FID = 0.0005
-W_SAME = 1.0
+W_SAME = 0.0001
 
 # W_RKD = 0.08
 # W_INV = 0.0
@@ -30,10 +30,10 @@ W_SAME = 1.0
 # W_FID = 0.0
 # W_SAME = 0.0
 
-CUDA_NUM = 6
+CUDA_NUM = 0
 BATCH_SIZE = 1024
 
-WANDB_NAME=f"1206_lr1e4_n32_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0"
+WANDB_NAME=f"1204_lr1e4_n32_b{BATCH_SIZE}_ddim_40_60_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm"
 
 
 CONFIG = {
@@ -41,7 +41,8 @@ CONFIG = {
     "device": f"cuda:{CUDA_NUM}",
     "out_dir": f"runs/{WANDB_NAME}",
     # teacher / student
-    "teacher_ckpt": f"ckpt_teacher_B1024_N65536_T100_step1000000.pt", 
+    # "teacher_ckpt": f"ckpt_teacher_B1024_N65536_T100_step1000000.pt", 
+    "teacher_ckpt": f"runs/1203_teacher_only_diff_loss_B1024_N65536_T400_no_norm/ckpt_student_step1000000.pt", 
     "student_init_ckpt": "",                     
     # "student_init_ckpt": "runs/1025_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.0_invW0.0_invinv_W1.0_diffW0.1/ckpt_student_step200000.pt",                     
     "resume_student_ckpt": f"",        
@@ -57,7 +58,7 @@ CONFIG = {
     "same_mode": "mean",   # 또는 "last" 로 바꿔가며 실험
 
 
-    "rkd_ddim_steps_to_t": 40,   # t_sel까지 최대 몇 번의 DDIM 전이만 사용할지
+    "rkd_ddim_steps_to_t": 50,   # t_sel까지 최대 몇 번의 DDIM 전이만 사용할지
 
     "batch_size": BATCH_SIZE,
     "num_noises": 8192, 
@@ -67,7 +68,7 @@ CONFIG = {
     "regen_noise_pool": False,      # True면 항상 새로 만듦
     
     # schedule / time
-    "T": 100,                 # total diffusion steps (timesteps = 0..T-1)
+    "T": 400,                 # total diffusion steps (timesteps = 0..T-1)
 
     "seed": 42,
     # RKD weights
@@ -87,7 +88,7 @@ CONFIG = {
     "ddim_eta": 0.0,
     # wandb
     "use_wandb": True,
-    "wandb_project": "RKD-DKDM-AICA-1206",
+    "wandb_project": "RKD-DKDM-AICA-1203-no-norm",
     "wandb_run_name": WANDB_NAME,
 }
 
@@ -552,19 +553,20 @@ def build_schedulers(num_train_timesteps: int):
     return train_sched, sample_sched
 
 
-def denormalize_np(arr: np.ndarray, mu: np.ndarray, sigma: np.ndarray):
-    return arr * sigma + mu
+# def denormalize_np(arr: np.ndarray, mu: np.ndarray, sigma: np.ndarray):
+#     return arr * sigma + mu
 
-def normalize_np(arr: np.ndarray, mu: np.ndarray, sigma: np.ndarray):
-    return (arr - mu) / sigma
+# def normalize_np(arr: np.ndarray, mu: np.ndarray, sigma: np.ndarray):
+#     return (arr - mu) / sigma
 
-def denormalize_torch(arr: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
-    # NumPy 버전과 연산 로직은 동일합니다.
-    return arr * sigma + mu
+# def denormalize_torch(arr: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
+#     # NumPy 버전과 연산 로직은 동일합니다.
+#     return arr * sigma + mu
 
-def normalize_torch(arr: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
-    # NumPy 버전과 연산 로직은 동일합니다.
-    return (arr - mu) / sigma
+# def normalize_torch(arr: torch.Tensor, mu: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
+#     # NumPy 버전과 연산 로직은 동일합니다.
+#     return (arr - mu) / sigma
+
 # ===================== Dataset ===================== #
 
 class StudentX0Dataset(Dataset):
@@ -572,7 +574,7 @@ class StudentX0Dataset(Dataset):
         self.X = self._load(path, fmt)  # (N,2) or (N,D)
         assert self.X.ndim == 2 and self.X.shape[1] >= 2, "Expect (N,2) or (N,D)"
         self.X = self.X[:, :2].astype(np.float32)
-        self.X = normalize_np(self.X, mu, sigma).astype(np.float32)  # 모델 입력 스케일로
+        # self.X = normalize_np(self.X, mu, sigma).astype(np.float32)  # 모델 입력 스케일로
     def _load(self, path, fmt):
         p = Path(path)
         if fmt == "npy":
@@ -706,10 +708,10 @@ def train_student_uniform_xt(cfg: Dict):
     noise_path = ensure_noise_pool(cfg)
     noise_pool = np.load(noise_path)  # (N,D), 작으면 통째 로드 OK
 
-    mu_teacher, sigma_teacher = load_norm_stats(cfg["teacher_data_stats"])
+    # mu_teacher, sigma_teacher = load_norm_stats(cfg["teacher_data_stats"])
     mu_student, sigma_student = load_norm_stats(cfg["student_data_stats"])
 
-    mu_teacher_tensor, sigma_teacher_tensor = load_norm_stats_torch(cfg["teacher_data_stats"], device)
+    # mu_teacher_tensor, sigma_teacher_tensor = load_norm_stats_torch(cfg["teacher_data_stats"], device)
     mu_student_tensor, sigma_student_tensor = load_norm_stats_torch(cfg["student_data_stats"], device)
 
     # --- Student 도메인 dataloader (diffusion loss용) ---
@@ -753,7 +755,7 @@ def train_student_uniform_xt(cfg: Dict):
         # possible_steps = [200, 195, 191, 190, 187, 174, 161, 157, 148, 135]
         # ddim_steps = random.choice(possible_steps)
 
-        ddim_steps = int(np.random.randint(30,51))
+        ddim_steps = int(np.random.randint(40,61))
         # ddim_steps = 151
 
         with torch.no_grad():
@@ -798,31 +800,31 @@ def train_student_uniform_xt(cfg: Dict):
 
         xt_T_x0 = xt_T_seq[-1]
 
-        xt_S_seq_denorm = [denormalize_torch(x, mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
-        xt_T_x0_denorm = denormalize_torch(xt_T_x0, mu_teacher_tensor, sigma_teacher_tensor)
-        x0_batch_denorm = denormalize_torch(x0_batch, mu_student_tensor, sigma_student_tensor)
-        x0_inv_T_denorm = denormalize_torch(x0_inv_T[-1], mu_teacher_tensor, sigma_teacher_tensor)
+        # xt_S_seq_denorm = [denormalize_torch(x, mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+        # xt_T_x0_denorm = denormalize_torch(xt_T_x0, mu_teacher_tensor, sigma_teacher_tensor)
+        # x0_batch_denorm = denormalize_torch(x0_batch, mu_student_tensor, sigma_student_tensor)
+        # x0_inv_T_denorm = denormalize_torch(x0_inv_T[-1], mu_teacher_tensor, sigma_teacher_tensor)
 
         # --- RKD (전 타임스텝) ---  (W_RKD != 0일 때만 계산)
         if cfg["W_RKD"] != 0:
-            for xt_S in xt_S_seq_denorm:
+            for xt_S in xt_S_seq:
                 rkd_s_d = torch.pdist(xt_S, p=2).clamp_min(1e-12)
-                rkd_t_d = torch.pdist(xt_T_x0_denorm, p=2).clamp_min(1e-12)
+                rkd_t_d = torch.pdist(xt_T_x0, p=2).clamp_min(1e-12)
                 rkd_s_d_list.append(rkd_s_d)
                 rkd_t_d_list.append(rkd_t_d)
 
         # --- INV: x_t^S vs x_0^S / x_0^{T,inv} --- (W_INV != 0일 때만)
         inv_s_d = inv_t_d = None
         if cfg["W_INV"] != 0:
-            s_full = torch.cdist(xt_S_seq_denorm[-1], x0_batch_denorm, p=2)
-            t_full = torch.cdist(xt_T_x0_denorm, x0_inv_T_denorm, p=2)
+            s_full = torch.cdist(xt_S_seq[-1], x0_batch, p=2)
+            t_full = torch.cdist(xt_T_x0, x0_inv_T[-1], p=2)
             inv_s_d = s_full.reshape(-1).clamp_min(1e-12)
             inv_t_d = t_full.reshape(-1).clamp_min(1e-12)
         # --- INVINV: x_0^S vs x_0^{T,inv} --- (W_INVINV != 0일 때만)
         invinv_s_d = invinv_t_d = None
         if cfg["W_INVINV"] != 0:
-            invinv_s_d = torch.pdist(x0_batch_denorm, p=2).clamp_min(1e-12)
-            invinv_t_d = torch.pdist(x0_inv_T_denorm, p=2).clamp_min(1e-12)
+            invinv_s_d = torch.pdist(x0_batch, p=2).clamp_min(1e-12)
+            invinv_t_d = torch.pdist(x0_inv_T[-1], p=2).clamp_min(1e-12)
 
         # --- mean normalization (글로벌: 활성화된 loss들만) ---
         student_parts = []
@@ -862,15 +864,15 @@ def train_student_uniform_xt(cfg: Dict):
 
         # --- FID  ---
         if cfg["W_FID"] != 0:
-            fid_student = fid_gaussian_torch(xt_S_seq_denorm[-1], x0_batch_denorm)
-            fid_teacher = fid_gaussian_torch(xt_T_x0_denorm, x0_inv_T_denorm)
+            fid_student = fid_gaussian_torch(xt_S_seq[-1], x0_batch)
+            fid_teacher = fid_gaussian_torch(xt_T_x0, x0_inv_T[-1])
         else:
             fid_student = torch.tensor(0.0, device=device)
             fid_teacher = torch.tensor(0.0, device=device)
 
         # --- SAME (trajectory 수축 regularizer) ---
         if cfg["W_SAME"] != 0:
-            xt_S_stack = torch.stack(xt_S_seq_denorm, dim=0)   # [K, B, D]
+            xt_S_stack = torch.stack(xt_S_seq, dim=0)   # [K, B, D]
             K = xt_S_stack.size(0)
             if cfg.get("same_mode", "mean") == "mean":
                 # (1) mean 기준: 모든 timestep이 서로 가깝게
@@ -918,7 +920,7 @@ def train_student_uniform_xt(cfg: Dict):
 
         # if (step_i % max(1, total_steps // 20) == 0) or (step_i == 1):
         if (step_i % 100 == 0) or (step_i == 1):
-            print(f"[step {step_i:06d}] rkd={rkd_loss.item():.6f}  x0_S_same={x0_S_same_loss.item():.6f}  inv={inversion_loss.item():.6f}   invinv={invinv_loss.item():.6f}  fid_T_loss={fid_teacher.item():.6f}  fid_S_loss={fid_student.item():.6f}  fid_loss={fid_loss.item():.6f}  total={loss.item():.6f}")
+            print(f"[step {step_i:06d}] rkd={rkd_loss.item():.6f}  x0_S_same={x0_S_same_loss.item():.6f}  inv={inversion_loss.item():.6f}   invinv={invinv_loss.item():.6f}  fid_loss={fid_loss.item():.6f}  total={loss.item():.6f}")
 
 
         if cfg["use_wandb"]:
@@ -961,12 +963,12 @@ def train_student_uniform_xt(cfg: Dict):
                 ts_s    = ts[idxs]
 
 
-                seq_T_s_plot = denormalize_np(seq_T_s, mu_teacher, sigma_teacher)
-                seq_S_s_plot = denormalize_np(seq_S_s, mu_student, sigma_student)
+                # seq_T_s_plot = denormalize_np(seq_T_s, mu_teacher, sigma_teacher)
+                # seq_S_s_plot = denormalize_np(seq_S_s, mu_student, sigma_student)
                 
                 _ = save_and_log_xt_pairs_for_all_t(
-                    left_seq   = seq_T_s_plot,
-                    right_seq  = seq_S_s_plot,
+                    left_seq   = seq_T_s,
+                    right_seq  = seq_S_s,
                     ts         = ts_s,
                     noise_ids  = np.arange(B_plot),
                     out_dir    = out_dir,
@@ -1006,7 +1008,8 @@ def train_student_uniform_xt(cfg: Dict):
             )
 
             # 역정규화
-            x0_s_plot = denormalize_np(x0_s.detach().cpu().numpy(), mu_student, sigma_student)
+            # x0_s_plot = denormalize_np(x0_s.detach().cpu().numpy(), mu_student, sigma_student)
+            x0_s_plot = x0_s.detach().cpu().numpy()
 
             # === 여기서 확실히 디렉토리 보장 ===
             figs_dir = Path(cfg["out_dir"]) / "figs"

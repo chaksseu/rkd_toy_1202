@@ -41,7 +41,7 @@ CONFIG = {
     "device": f"cuda:{CUDA_NUM}",
     "out_dir": f"runs/{WANDB_NAME}",
     # teacher / student
-    "teacher_ckpt": f"runs/1202_only_diff_loss_B1024_teacher65536_T100/ckpt_student_step1000000.pt", 
+    "teacher_ckpt": f"ckpt_teacher_B1024_N65536_T100_step1000000.pt", 
     "student_init_ckpt": "",                     
     # "student_init_ckpt": "runs/1025_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.0_invW0.0_invinv_W1.0_diffW0.1/ckpt_student_step200000.pt",                     
     "resume_student_ckpt": f"",        

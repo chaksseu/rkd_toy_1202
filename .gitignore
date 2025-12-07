@@ -10,8 +10,6 @@ vis_ddim_*/
 inversion_test_*/
 vis_traj_*/
 
-
-
 # 파일 확장자
 *.pt
 *.pth
@@ -28,3 +26,6 @@ __pycache__/
 .DS_Store
 .env
 nohup.out
+
+# 특정 파일 예외 처리
+!ckpt_teacher_B1024_N65536_T100_step1000000.pt

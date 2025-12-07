@@ -1065,7 +1065,6 @@ def train_student_uniform_xt(cfg: Dict):
             x0 = torch.as_tensor(x0, dtype=torch.float32)
         return x0.to(device, non_blocking=True)
 
-
     # --- Teacher-Student pair dataloader (새로운 pair loss용) ---
     pair_loader = build_pair_dataloader(cfg, mu_teacher, sigma_teacher,
                                         mu_student, sigma_student)
