@@ -87,7 +87,7 @@ CONFIG = {
     "ddim_eta": 0.0,
     # wandb
     "use_wandb": True,
-    "wandb_project": "RKD-DKDM-AICA-1207-H",
+    "wandb_project": "RKD-DKDM-AICA-1208-H",
     "wandb_run_name": WANDB_NAME,
 
     "use_learnable_H": True,
@@ -978,7 +978,7 @@ def train_student_uniform_xt(cfg: Dict):
 
         # --- SAME (trajectory 수축 regularizer) ---
         if cfg["W_SAME"] != 0:
-            xt_S_stack = torch.stack(xt_S_seq_denorm, dim=0)   # [K, B, D]
+            xt_S_stack = torch.stack(xt_S_seq_denorm_no_H, dim=0)   # [K, B, D]
             K = xt_S_stack.size(0)
             if cfg.get("same_mode", "mean") == "mean":
                 # (1) mean 기준: 모든 timestep이 서로 가깝게
