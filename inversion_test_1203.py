@@ -504,8 +504,8 @@ def ddim_resample(
 def main():
     parser = argparse.ArgumentParser(description="Batch DDIM Inversion → Resampling for .npy data")
     parser.add_argument("--npy", type=str, default="smile_data_n32_scale2_rot60_trans_50_-20/train.npy", help="Path to x0 .npy file (shape [N, D])")
-    parser.add_argument("--teacher_ckpt", type=str, default="runs/1202_lr1e4_n32_b1024_ddim_50_150_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step050000.pt", help="Path to teacher checkpoint")
-    parser.add_argument("--out_dir", type=str, default="inversion_test_1202_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.0", help="Output directory")
+    parser.add_argument("--teacher_ckpt", type=str, default="runs/1206_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.01_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step155000.pt", help="Path to teacher checkpoint")
+    parser.add_argument("--out_dir", type=str, default="inversion_test_1208_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.01", help="Output directory")
     parser.add_argument("--device", type=str, default="cuda:7")
     parser.add_argument("--T", type=int, default=100, help="num_train_timesteps used in training")
     parser.add_argument("--steps", type=int, default=40, help="DDIM steps (sampling/inversion)")
@@ -633,7 +633,7 @@ def main():
 
     # 7) Real teacher 로드 & 같은 z_T로 복원
     real_teacher = load_teacher_model(
-        "ckpt_teacher_T1000_step370000_1021.pt", device,
+        "ckpt_teacher_B1024_N65536_T100_step1000000.pt", device,
         in_dim=args.in_dim, time_dim=args.time_dim,
         hidden=args.hidden, depth=args.depth, out_dim=args.out_dim
     )

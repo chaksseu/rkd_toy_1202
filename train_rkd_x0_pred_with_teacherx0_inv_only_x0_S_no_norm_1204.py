@@ -25,15 +25,15 @@ import itertools
 # W_SAME = 0.0
 
 W_RKD = 0.08
-W_INV = 0.1
-W_INVINV = 1.0
-W_FID = 0.01
-W_SAME = 0.0001
+W_INV = 0.0
+W_INVINV = 0.0
+W_FID = 0.0
+W_SAME = 0.0
 
-CUDA_NUM = 7
+CUDA_NUM = 5
 BATCH_SIZE = 1024
 
-WANDB_NAME=f"1205_lr1e4_n32_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0_S_no_norm"
+WANDB_NAME=f"1208_lr1e4_n32_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0_S_no_norm"
 
 
 CONFIG = {
