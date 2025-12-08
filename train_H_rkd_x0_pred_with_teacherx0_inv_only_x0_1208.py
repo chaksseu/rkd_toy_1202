@@ -21,8 +21,8 @@ import itertools
 W_RKD = 0.08
 W_INV = 0.1
 W_INVINV = 1.0
-W_FID = 0.000001
-W_SAME = 0.0001
+W_FID = 0.00000001
+W_SAME = 0.00001
 
 # W_RKD = 0.08
 # W_INV = 0.0
@@ -30,7 +30,7 @@ W_SAME = 0.0001
 # W_FID = 0.0
 # W_SAME = 0.0
 
-CUDA_NUM = 2
+CUDA_NUM = 5
 BATCH_SIZE = 1024
 
 WANDB_NAME=f"1208_lr1e4_n32_H_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0"
@@ -274,9 +274,9 @@ def apply_H_to_seq_per_t(seq_S: np.ndarray, ts: np.ndarray, H_module: nn.Module,
     for k in range(K):
         t_k = int(ts[k])
         xk  = torch.from_numpy(seq_S[k]).to(device=device, dtype=torch.float32)   # (B,2)
+        xk_H = xk #, _ =  H_module(xk, t_k)                                              # (B,2)
         if k == K - 1:  # 마지막 스텝만 H 적용
             xk_H, _ = H_module(xk)
-        xk_H = xk #, _ =  H_module(xk, t_k)                                              # (B,2)
         outs.append(xk_H.detach().cpu().numpy())
     return np.stack(outs, axis=0)
 
@@ -911,6 +911,9 @@ def train_student_uniform_xt(cfg: Dict):
         x0_batch_denorm_no_H = denormalize_torch(x0_batch, mu_student_tensor, sigma_student_tensor)
         xt_S_seq_denorm_no_H = denormalize_torch(xt_S_seq[-1], mu_student_tensor, sigma_student_tensor) 
 
+        xt_S_seq_denorm_no_H_seq = [denormalize_torch(x, mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+
+
         # --- RKD (전 타임스텝) ---  (W_RKD != 0일 때만 계산)
         if cfg["W_RKD"] != 0:
             for xt_S in xt_S_seq_denorm:
@@ -978,7 +981,7 @@ def train_student_uniform_xt(cfg: Dict):
 
         # --- SAME (trajectory 수축 regularizer) ---
         if cfg["W_SAME"] != 0:
-            xt_S_stack = torch.stack(xt_S_seq_denorm_no_H, dim=0)   # [K, B, D]
+            xt_S_stack = torch.stack(xt_S_seq_denorm_no_H_seq, dim=0)   # [K, B, D]
             K = xt_S_stack.size(0)
             if cfg.get("same_mode", "mean") == "mean":
                 # (1) mean 기준: 모든 timestep이 서로 가깝게
