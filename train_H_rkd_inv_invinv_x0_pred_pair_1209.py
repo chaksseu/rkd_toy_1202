@@ -26,10 +26,10 @@ W_FID = 0.0000001
 W_SAME = 0.0
 W_PAIR = 0.001
 
-CUDA_NUM = 0
-BATCH_SIZE = 1024
+CUDA_NUM = 4
+BATCH_SIZE = 4096
 
-WANDB_NAME=f"1204_lr1e4_n32_H_b{BATCH_SIZE}_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_fidW{W_FID}_sameW{W_SAME}_pairW{W_PAIR}"
+WANDB_NAME=f"1209_lr1e4_n32_H_b{BATCH_SIZE}_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_fidW{W_FID}_sameW{W_SAME}_pairW{W_PAIR}"
 
 
 CONFIG = {
@@ -80,7 +80,7 @@ CONFIG = {
     "ddim_eta": 0.0,
     # wandb
     "use_wandb": True,
-    "wandb_project": "RKD-DKDM-AICA-1204-H",
+    "wandb_project": "RKD-DKDM-AICA-1208-H",
     "wandb_run_name": WANDB_NAME,
 
     "use_learnable_H": True,
@@ -192,7 +192,6 @@ def fid_gaussian_torch(X: torch.Tensor, Y: torch.Tensor, eps: float = 1e-6) -> t
 
 
 
-
 def plot_triplet_scatter_colored(
     left_xy: np.ndarray,      # Teacher (B,2)
     mid_xy: np.ndarray,       # Student raw (B,2)
@@ -281,7 +280,9 @@ def apply_H_to_seq_per_t(seq_S: np.ndarray, ts: np.ndarray, H_module: nn.Module,
     for k in range(K):
         t_k = int(ts[k])
         xk  = torch.from_numpy(seq_S[k]).to(device=device, dtype=torch.float32)   # (B,2)
-        xk_H, _ = H_module(xk, t_k)                                              # (B,2)
+        xk_H = xk #, _ =  H_module(xk, t_k)                                              # (B,2)
+        if k == K - 1:  # 마지막 스텝만 H 적용
+            xk_H, _ = H_module(xk)
         outs.append(xk_H.detach().cpu().numpy())
     return np.stack(outs, axis=0)
 
@@ -538,7 +539,7 @@ def sample_ddim_student(
     local = DDIMScheduler.from_config(sample_scheduler.config)
     local.set_timesteps(sample_steps, device=device)
 
-    xs, ts = [], []
+    xs = []
 
     model.train()
     for i, t in enumerate(local.timesteps):
@@ -549,43 +550,13 @@ def sample_ddim_student(
         eps = model(x_in, t_b)
         out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
         x = out.prev_sample
+        pred_x0 = out.pred_original_sample
 
-        xs.append(x) 
-        ts.append(t_int)
-
-        if t_int <= t_sel:
-            break
-    return xs, ts
-
-
-
-def sample_ddim_student_2(
-    model, sample_scheduler, z, device, sample_steps=None, eta=0.0, t_sel=0,
-):
-    x = z.to(device)
-    B = x.shape[0]
-
-    local = DDIMScheduler.from_config(sample_scheduler.config)
-    local.set_timesteps(sample_steps, device=device)
-
-    xs, ts = [x], []
-
-    model.train()
-    for i, t in enumerate(local.timesteps):
-        t_int = int(t)
-
-        t_b = torch.full((B,), t_int, device=device, dtype=torch.long)
-        x_in = local.scale_model_input(x, t)
-        eps = model(x_in, t_b)
-        out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
-        x = out.prev_sample
-
-        xs.append(x) 
-        ts.append(t_int)
+        xs.append(pred_x0) 
 
         if t_int <= t_sel:
             break
-    return xs, ts
+    return xs
 
 
 @torch.no_grad()
@@ -598,7 +569,7 @@ def sample_ddim_teacher(
     local = DDIMScheduler.from_config(sample_scheduler.config)
     local.set_timesteps(sample_steps, device=device)
 
-    xs, ts = [], []
+    xs = []
 
     model.eval()
     for t in local.timesteps:  # [T-1, ..., 0] 순서
@@ -609,43 +580,14 @@ def sample_ddim_teacher(
         eps = model(x_in, t_b)
         out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
         x = out.prev_sample
+        pred_x0 = out.pred_original_sample
 
-        xs.append(x) 
-        ts.append(t_int)
-
-        if t_int <= t_sel:
-            break
-    return xs, ts
-
-
-@torch.no_grad()
-def sample_ddim_teacher_2(
-    model, sample_scheduler, z, device, sample_steps=None, eta=0.0, t_sel=0,
-):
-    x = z.to(device)
-    B = x.shape[0]
-
-    local = DDIMScheduler.from_config(sample_scheduler.config)
-    local.set_timesteps(sample_steps, device=device)
-
-    xs, ts = [x], []
-
-    model.eval()
-    for t in local.timesteps:  # [T-1, ..., 0] 순서
-        t_int = int(t)
-        
-        t_b = torch.full((B,), t_int, device=device, dtype=torch.long)
-        x_in = local.scale_model_input(x, t)
-        eps = model(x_in, t_b)
-        out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
-        x = out.prev_sample
-
-        xs.append(x) 
-        ts.append(t_int)
+        xs.append(pred_x0) 
 
         if t_int <= t_sel:
             break
-    return xs, ts
+    return xs
+
 
 def sample_ddim_teacher_grad(
     model, sample_scheduler, z, device, sample_steps=None, eta=0.0, t_sel=0,
@@ -656,7 +598,7 @@ def sample_ddim_teacher_grad(
     local = DDIMScheduler.from_config(sample_scheduler.config)
     local.set_timesteps(sample_steps, device=device)
 
-    xs, ts = [], []
+    xs = []
 
     model.eval()
     for t in local.timesteps:  # [T-1, ..., 0] 순서
@@ -667,44 +609,13 @@ def sample_ddim_teacher_grad(
         eps = model(x_in, t_b)
         out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
         x = out.prev_sample
+        pred_x0 = out.pred_original_sample
 
-        xs.append(x) 
-        ts.append(t_int)
-
-        if t_int <= t_sel:
-            break
-    return xs, ts
-
-
-def sample_ddim_teacher_grad_2(
-    model, sample_scheduler, z, device, sample_steps=None, eta=0.0, t_sel=0,
-):
-    x = z.to(device)
-    B = x.shape[0]
-
-    local = DDIMScheduler.from_config(sample_scheduler.config)
-    local.set_timesteps(sample_steps, device=device)
-
-    xs, ts = [x], []
-
-    model.eval()
-    for t in local.timesteps:  # [T-1, ..., 0] 순서
-        t_int = int(t)
-        
-        t_b = torch.full((B,), t_int, device=device, dtype=torch.long)
-        x_in = local.scale_model_input(x, t)
-        eps = model(x_in, t_b)
-        out = local.step(model_output=eps, timestep=t, sample=x, eta=eta)
-        x = out.prev_sample
-
-        xs.append(x) 
-        ts.append(t_int)
+        xs.append(pred_x0) 
 
         if t_int <= t_sel:
             break
-    return xs, ts
-
-
+    return xs
 
 
 def sample_ddim_inv_student(
@@ -722,47 +633,19 @@ def sample_ddim_inv_student(
     inv.set_timesteps(sample_steps, device=device)      # [T' - 1, ..., 0]
 
     xs = [x]
-
     model.train()
 
     for t in inv.timesteps:
         t_b = torch.full((x.shape[0],), int(t), device=device, dtype=torch.long)
         latent_in = inv.scale_model_input(x, t)
         eps = model(latent_in, t_b)
-        x = inv.step(eps, t, x).prev_sample
+        out = inv.step(eps, t, x)
+        x = out.prev_sample
+        pred_x0 = out.pred_original_sample
+        xs.append(pred_x0) 
 
-        xs.append(x) 
-        
-    return xs
+    return xs  
 
-def sample_ddim_inv_student_2(
-    model, sample_scheduler, x0, device, sample_steps=None, eta=0.0,
-):
-    """
-    DDIM 인버전(eta=0 가정): x_0 -> ... -> x_{T-1}
-    Teacher에 다시 주입할 z를 만들 때 사용.
-    """
-    x = x0.to(device)
-    B = x.shape[0]
-
-    inv = DDIMInverseScheduler.from_config(sample_scheduler.config)
-
-    inv.set_timesteps(sample_steps, device=device)      # [T' - 1, ..., 0]
-
-    xs, ts = [x], [0]
-
-    model.train()
-
-    for t in inv.timesteps:
-        t_b = torch.full((x.shape[0],), int(t), device=device, dtype=torch.long)
-        latent_in = inv.scale_model_input(x, t)
-        eps = model(latent_in, t_b)
-        x = inv.step(eps, t, x).prev_sample
-
-        xs.append(x) 
-        ts.append(int(t)) 
-            
-    return xs, ts
 
 
 # ===================== MODEL ===================== #
@@ -770,62 +653,62 @@ def sample_ddim_inv_student_2(
 
 class LearnableHomography(nn.Module):
     """
-    Row-vector convention: [x, y, 1] @ H^T -> [X, Y, W], (x',y')=(X/W, Y/W)
-    H는 각 timestep t마다 다른 3x3 행렬을 학습합니다: shape [T, 3, 3]
+    Row-vector convention: [x, y, 1] @ H^T -> [X, Y, W], (x',y') = (X/W, Y/W)
+
+    - H: 하나의 3x3 행렬만 학습 (shape: (3,3))
+    - 모든 timestep / 모든 sample에서 같은 H를 사용
     """
-    def __init__(self, init_9=None, eps: float = 1e-6, T: int = 50, fix_last_row: bool = False):
+    def __init__(
+        self,
+        init_9=None,
+        eps: float = 1e-6,
+        fix_last_row: bool = False,
+    ):
         super().__init__()
-        self.T = int(T)
         self.eps = float(eps)
         self.fix_last_row = bool(fix_last_row)  # True면 마지막 행을 [0,0,1]로 고정(affine)
 
         if init_9 is None:
-            I = torch.eye(3, dtype=torch.float32)         # (3,3)
+            I = torch.eye(3, dtype=torch.float32)    # (3,3)
         else:
-            I = torch.tensor(init_9, dtype=torch.float32).view(3,3)
+            I = torch.tensor(init_9, dtype=torch.float32).view(3, 3)
 
-        # [T,3,3]로 초기화 (모든 t에서 I로 시작)
-        H0 = I.unsqueeze(0).repeat(self.T, 1, 1)          # (T,3,3)
-        self.H = nn.Parameter(H0)                          # learnable
+        # 이제는 진짜 (3,3) 하나만 학습
+        self.H = nn.Parameter(I)                     # (3,3)
 
-    def _get_Ht(self, t: torch.Tensor) -> torch.Tensor:
+    def _get_H(self) -> torch.Tensor:
         """
-        t: shape () | (B,) long
-        return: H_t of shape (B,3,3) if t is vector, else (1,3,3)
+        return: (3,3) homography matrix
         """
-        if isinstance(t, int):
-            t = torch.tensor([t], dtype=torch.long, device=self.H.device)
-        elif torch.is_tensor(t) and t.ndim == 0:
-            t = t.view(1)
-        # index
-        Ht = self.H.index_select(0, t.clamp(min=0, max=self.T-1))  # (B,3,3)
+        H = self.H
         if self.fix_last_row:
-            # 마지막 행을 [0,0,1]로 고정 (affine 제약)
-            Ht = Ht.clone()
-            Ht[..., 2, :2] = 0.0
-            Ht[..., 2, 2]  = 1.0
-        return Ht
+            H = H.clone()
+            H[2, :2] = 0.0
+            H[2, 2]  = 1.0
+        return H
 
-    def forward(self, xy: torch.Tensor, t) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, xy: torch.Tensor, t=None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        xy: (B,2), t: int | () | (B,) long
-        returns: (xy_trans: (B,2), w: (B,1))
+        xy: (B,2)
+        t: 더 이상 쓰지 않음 (호환성용)
+
+        returns:
+            xy_trans: (B,2)
+            w:        (B,1)
         """
         B = xy.shape[0]
         device = xy.device
         ones = torch.ones(B, 1, device=device, dtype=xy.dtype)
-        homo = torch.cat([xy, ones], dim=-1)              # (B,3)
+        homo = torch.cat([xy, ones], dim=-1)          # (B,3)
 
-        if not torch.is_tensor(t):                        # python int
-            t = torch.full((B,), int(t), device=device, dtype=torch.long)
-        elif t.ndim == 0:                                 # scalar tensor
-            t = t.expand(B)
+        H = self._get_H()                             # (3,3)
+        # (B,3) @ (3,3)^T -> (B,3)
+        out = homo @ H.transpose(0, 1)                # (B,3)
 
-        Ht = self._get_Ht(t)                               # (B,3,3)
-        out = torch.bmm(homo.unsqueeze(1), Ht.transpose(1,2)).squeeze(1)  # (B,3)
         w   = out[:, 2:3]
         den = w.sign() * torch.clamp(w.abs(), min=self.eps)
-        xy_t = out[:, :2] / den
+        xy_t = out[:, :2] / den                       # (B,2)
+
         return xy_t, w
 
 
@@ -911,67 +794,6 @@ def build_student_dataloader(cfg, mu, sigma):
     ds = StudentX0Dataset(cfg["student_data_path"], cfg["student_data_format"], mu, sigma)
     return DataLoader(ds, batch_size=bs, shuffle=True, drop_last=True, num_workers=0, pin_memory=True)
 
-# ===================== RKD on epsilon ===================== #
-def loss_rkd_xt(
-    xt_s: torch.Tensor,      # [B, D]
-    xt_s_2: torch.Tensor,    # [B, D]
-    xt_t: torch.Tensor,      # [B, D]
-    xt_t_2: torch.Tensor,    # [B, D]
-    use_mu_norm: bool = True,
-    w_rkd: float = 1.0,
-    w_norm: float = 0.0,     # (미사용) 필요없으면 제거해도 됨
-    eps: float = 1e-12,
-):
-    B = xt_s.size(0)
-    if B < 1:  # 전체 대응은 B>=1이면 가능(대각만이라도 있음)
-        z = xt_s.new_zeros(())
-        return {"total": z, "rkd": z}
-
-    # cross-distance 전체 (대각 포함)
-    t_full = torch.cdist(xt_t,   xt_t_2, p=2)  # [B,B]
-    s_full = torch.cdist(xt_s,   xt_s_2, p=2)  # [B,B]
-
-    # 벡터화: 모든 (i,j) 사용
-    t_d = t_full.reshape(-1).clamp_min(eps)
-    s_d = s_full.reshape(-1).clamp_min(eps)
-
-    if use_mu_norm:
-        t_d = t_d / t_d.mean().clamp_min(eps)
-        s_d = s_d / s_d.mean().clamp_min(eps)
-
-    loss_rkd = w_rkd * F.mse_loss(s_d, t_d, reduction="mean")
-    return {"total": loss_rkd, "rkd": loss_rkd}
-
-
-
-
-def loss_rkd_xt_pdist(
-    xt_s: torch.Tensor,      # [B, D]
-    xt_t: torch.Tensor,      # [B, D]
-    use_mu_norm: bool = True,
-    w_rkd: float = 1.0,
-    w_norm: float = 0.0,
-    eps: float = 1e-12,
-):
-    B = xt_s.size(0)
-    if B < 2:
-        z = xt_s.new_zeros(())
-        return {"total": z, "rkd": z, "norm": z, "t_norm": z, "s_norm": z}
-
-    # pairwise distances on epsilon vectors
-
-    s_d = torch.pdist(xt_s, p=2).clamp_min(eps)           # (U,)
-    t_d = torch.pdist(xt_t, p=2).clamp_min(eps)  # (U,)
-
-    if use_mu_norm:
-        t_d = t_d / t_d.mean().clamp_min(eps)
-        s_d = s_d / s_d.mean().clamp_min(eps)
-    
-    loss_rkd = w_rkd * F.mse_loss(s_d, t_d, reduction="mean")
-
-    total = loss_rkd
-    return {"total": total, "rkd": loss_rkd}
-
  
 
 # ===================== Training ===================== #
@@ -1014,7 +836,7 @@ def train_student_uniform_xt(cfg: Dict):
 
 
     # === Learnable H ===
-    H_module = LearnableHomography(init_9=cfg["H_init"], eps=cfg["H_eps"], T=cfg["T"]).to(device)
+    H_module = LearnableHomography(init_9=cfg["H_init"], eps=cfg["H_eps"]).to(device)
 
     if cfg.get("resume_H_ckpt"):
         pH = Path(cfg["resume_H_ckpt"])
@@ -1026,9 +848,7 @@ def train_student_uniform_xt(cfg: Dict):
         for p in H_module.parameters():
             p.requires_grad = False
 
-
     # opt = torch.optim.AdamW(student.parameters(), lr=cfg["lr"], weight_decay=cfg["weight_decay"])
-
     opt = torch.optim.AdamW(
         list(student.parameters()) + list(H_module.parameters()),
         lr=cfg["lr"], weight_decay=cfg["weight_decay"]
@@ -1124,14 +944,14 @@ def train_student_uniform_xt(cfg: Dict):
 
 
         with torch.no_grad():
-            xt_T_seq, ts_seq_T = sample_ddim_teacher(
+            xt_T_seq = sample_ddim_teacher(
                 model=teacher, sample_scheduler=ddim, z=z, 
                 device=device, sample_steps=ddim_steps,
                 eta=float(cfg.get("ddim_eta", 0.0)), t_sel=t_sel,
             )
 
         student.train()
-        xt_S_seq, ts_seq_S = sample_ddim_student(
+        xt_S_seq = sample_ddim_student(
             model=student, sample_scheduler=ddim, z=z, 
             device=device, sample_steps=ddim_steps,
             eta=float(cfg.get("ddim_eta", 0.0)), t_sel=t_sel,
@@ -1144,58 +964,27 @@ def train_student_uniform_xt(cfg: Dict):
 
         pair_steps = ddim_steps 
 
-        # --- 1. Teacher data -> Teacher inversion  -> z_T ---
-        #    (x0_T -> ... -> z_T)
-        T_inv_seq_full, ts_T_inv_seq_full = sample_ddim_inv_student_2(
-            model=teacher,
-            sample_scheduler=ddim,
-            x0=x0_T_pair,
-            device=device,
-            sample_steps=pair_steps,
+        S_inv_z_seq = sample_ddim_inv_student(
+            model=student, sample_scheduler=ddim, x0=x0_S_pair, 
+            device=device, sample_steps=ddim_steps,
             eta=float(cfg.get("ddim_eta", 0.0)),
         )
-
-        # T_inv_seq_full[0] = x0_T, 마지막 = z_T
-        z_T = T_inv_seq_full[-1]
-        # 시간 순서를 맞추기 위해 noise→x0 방향으로 뒤집기 (기존 코드 패턴과 동일)
-        T_inv_seq = list(reversed(T_inv_seq_full[:-1]))  # 길이 pair_steps
-
-        # --- 1b. z_T에서 Student sampling (grad O) -> {x_t^{S|T}} ---
-        S_from_T_seq, ts_pair_1 = sample_ddim_student(
-            model=student,
-            sample_scheduler=ddim,
-            z=z_T,
-            device=device,
-            sample_steps=pair_steps,
-            eta=float(cfg.get("ddim_eta", 0.0)),
-            t_sel=0,
-        )  # S_from_T_seq: 리스트, 각 원소 (B_pair, 2)
-
-        # --- 2. Student data -> Student inversion (grad O) -> z_S ---
-        S_inv_seq_full, ts_S_inv_seq_full = sample_ddim_inv_student_2(
-            model=student,
-            sample_scheduler=ddim,
-            x0=x0_S_pair,
-            device=device,
-            sample_steps=pair_steps,
-            eta=float(cfg.get("ddim_eta", 0.0)),
+        x0_inv_T = sample_ddim_teacher_grad(
+            model=teacher, sample_scheduler=ddim, z=S_inv_z_seq[-1], 
+            device=device, sample_steps=ddim_steps,
+            eta=float(cfg.get("ddim_eta", 0.0)), t_sel=0,
         )
 
-        # S_inv_seq_full[0] = x0_S, 마지막 = z_S
-        z_S = S_inv_seq_full[-1]   # 여기서는 grad를 살려둠
-        S_inv_seq = list(reversed(S_inv_seq_full[:-1]))      # noise→x0 방향, 길이 pair_steps
-
-        # --- 2b. z_S에서 Teacher sampling, Teacher 파라미터는 requires_grad=False) ---
-        T_from_S_seq, ts_pair_2 = sample_ddim_teacher_grad(
-            model=teacher,
-            sample_scheduler=ddim,
-            z=z_S,
-            device=device,
-            sample_steps=pair_steps,
+        T_inv_z_seq = sample_ddim_inv_student(
+            model=teacher, sample_scheduler=ddim, x0=x0_T_pair, 
+            device=device, sample_steps=ddim_steps,
             eta=float(cfg.get("ddim_eta", 0.0)),
-            t_sel=0,
-        )  # T_from_S_seq: 리스트, 각 원소 (B_pair, 2)
-
+        )
+        x0_inv_S = sample_ddim_teacher_grad(
+            model=student, sample_scheduler=ddim, z=T_inv_z_seq[-1], 
+            device=device, sample_steps=ddim_steps,
+            eta=float(cfg.get("ddim_eta", 0.0)), t_sel=0,
+        )
 
         ##################  RKD LOSSES ##################
 
@@ -1205,7 +994,28 @@ def train_student_uniform_xt(cfg: Dict):
         pair_loss = torch.tensor(0.0, device=device)        
         x0_S_same_loss = torch.tensor(0.0, device=device)
 
-        # xt_S_H, _      = H_module(xt_S,     t=torch.full((xt_S.shape[0],),     t_cur, device=device, dtype=torch.long))
+
+        rkd_s_d_list, rkd_t_d_list = [], []
+
+        xt_T_x0 = xt_T_seq[-1]
+
+        xt_S_seq_denorm = [denormalize_torch(H_module(x)[0], mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+        xt_T_x0_denorm = denormalize_torch(xt_T_x0, mu_teacher_tensor, sigma_teacher_tensor)
+        x0_batch_denorm = denormalize_torch(H_module(x0_batch)[0], mu_student_tensor, sigma_student_tensor)
+        x0_inv_T_denorm = denormalize_torch(x0_inv_T[-1], mu_teacher_tensor, sigma_teacher_tensor)
+
+        x0_batch_denorm_no_H = denormalize_torch(x0_batch, mu_student_tensor, sigma_student_tensor)
+        xt_S_seq_denorm_no_H = denormalize_torch(xt_S_seq[-1], mu_student_tensor, sigma_student_tensor) 
+
+        xt_S_seq_denorm_no_H_seq = [denormalize_torch(x, mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+
+
+
+
+
+
+
+
 
 
         ################## TOTAL LOSS ##################

@@ -22,7 +22,7 @@ W_RKD = 0.08
 W_INV = 0.1
 W_INVINV = 1.0
 W_FID = 0.00000001
-W_SAME = 0.00001
+W_SAME = 0.00000001 #000001
 
 # W_RKD = 0.08
 # W_INV = 0.0
@@ -30,10 +30,10 @@ W_SAME = 0.00001
 # W_FID = 0.0
 # W_SAME = 0.0
 
-CUDA_NUM = 5
+CUDA_NUM = 0
 BATCH_SIZE = 1024
 
-WANDB_NAME=f"1208_lr1e4_n32_H_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0"
+WANDB_NAME=f"1209_lr1e4_n32_H_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0"
 
 
 CONFIG = {
@@ -82,17 +82,17 @@ CONFIG = {
     # optim
     "lr": 1e-4, "weight_decay": 0.0, "max_grad_norm": 1.0,
     # sampling viz
-    "vis_interval_epochs": 5000,
+    "vis_interval_epochs": 1000,
     "n_vis": 8192,       # 경로를 수집/표시할 noise 개수
     "ddim_eta": 0.0,
     # wandb
     "use_wandb": True,
-    "wandb_project": "RKD-DKDM-AICA-1208-H",
+    "wandb_project": "RKD-DKDM-AICA-1209-H",
     "wandb_run_name": WANDB_NAME,
 
     "use_learnable_H": True,
     "H_init": [1,0,0,  0,1,0,  0,0,1],     # 초기값(I)
-    "H_eps": 1e-6,                        # w 분모 안정화
+    "H_eps": 1e-8,                        # w 분모 안정화
     "resume_H_ckpt": "",                  # (옵션) H만 재개 로드 경로
 }
 
