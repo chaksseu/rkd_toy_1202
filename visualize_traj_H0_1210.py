@@ -6,7 +6,7 @@ Student DDIM Trajectory Visualizer (norm / denorm / H-Transform) + Pure Score Fi
 
 - STUDENT(MLP epsilon-predictor) 로드
 - DDIM으로 x_T -> x_0 궤적 수집 및 저장 (norm / denorm / H 모두: NPY / overlay / frames / GIF)
-- LearnableHomography (H-module) ckpt를 불러와서, 학생 normalized 공간에서 H(t) 적용
+- LearnableHomography (H-module) ckpt를 불러와서, 학생 normalized 공간에서 H 적용
 - 모델 자체의 score(vector field) 시각화: streamplot + contour + quiver (norm / denorm)
 """
 
@@ -27,7 +27,7 @@ WANDB_NAME = f"1117_lr1e4_n32_b{BATCH_SIZE}_ddim_50_150_steps"
 CONFIG = {
     "device": f"cuda:{CUDA_NUM}",
     "out_dir": f"runs/{WANDB_NAME}",
-    "T": 1000,
+    "T": 100,
     "seed": 42,
     "dim": 2,
     "student_hidden": 256,
@@ -112,60 +112,63 @@ def load_norm_stats(json_path: str):
 # ===================== LEARNABLE H (H-module) ===================== #
 class LearnableHomography(nn.Module):
     """
-    Row-vector convention: [x, y, 1] @ H^T -> [X, Y, W], (x',y')=(X/W, Y/W)
-    H(t): shape [T, 3, 3], 각 timestep마다 다른 행렬.
+    Row-vector convention: [x, y, 1] @ H^T -> [X, Y, W], (x',y') = (X/W, Y/W)
+
+    - H: 하나의 3x3 행렬만 학습 (shape: (3,3))
+    - 모든 timestep / 모든 sample에서 같은 H를 사용
+    - t 인자는 호환성을 위해 남겨두지만 사용하지 않음
     """
-    def __init__(self, init_9=None, eps: float = 1e-6, T: int = 1000, fix_last_row: bool = False):
+    def __init__(
+        self,
+        init_9=None,
+        eps: float = 1e-6,
+        fix_last_row: bool = False,
+    ):
         super().__init__()
-        self.T = int(T)
         self.eps = float(eps)
-        self.fix_last_row = bool(fix_last_row)
+        self.fix_last_row = bool(fix_last_row)  # True면 마지막 행을 [0,0,1]로 고정(affine)
 
         if init_9 is None:
-            I = torch.eye(3, dtype=torch.float32)
+            I = torch.eye(3, dtype=torch.float32)    # (3,3)
         else:
             I = torch.tensor(init_9, dtype=torch.float32).view(3, 3)
 
-        H0 = I.unsqueeze(0).repeat(self.T, 1, 1)  # (T,3,3)
-        self.H = nn.Parameter(H0)
+        # 단일 (3,3) H
+        self.H = nn.Parameter(I)                     # (3,3)
 
-    def _get_Ht(self, t: torch.Tensor) -> torch.Tensor:
+    def _get_H(self) -> torch.Tensor:
         """
-        t: () | (B,) long
-        return: (B,3,3)
+        return: (3,3) homography matrix
         """
-        if isinstance(t, int):
-            t = torch.tensor([t], dtype=torch.long, device=self.H.device)
-        elif torch.is_tensor(t) and t.ndim == 0:
-            t = t.view(1)
-
-        Ht = self.H.index_select(0, t.clamp(min=0, max=self.T - 1))
+        H = self.H
         if self.fix_last_row:
-            Ht = Ht.clone()
-            Ht[..., 2, :2] = 0.0
-            Ht[..., 2, 2] = 1.0
-        return Ht
+            H = H.clone()
+            H[2, :2] = 0.0
+            H[2, 2]  = 1.0
+        return H
 
-    def forward(self, xy: torch.Tensor, t):
+    def forward(self, xy: torch.Tensor, t=None):
         """
-        xy: (B,2), t: int | () | (B,) long
-        returns: (xy_trans: (B,2), w: (B,1))
+        xy: (B,2)
+        t : 사용하지 않지만 인터페이스 호환성 유지용
+
+        returns:
+            xy_trans: (B,2)
+            w:        (B,1)
         """
         B = xy.shape[0]
         device = xy.device
         ones = torch.ones(B, 1, device=device, dtype=xy.dtype)
-        homo = torch.cat([xy, ones], dim=-1)  # (B,3)
+        homo = torch.cat([xy, ones], dim=-1)          # (B,3)
 
-        if not torch.is_tensor(t):
-            t = torch.full((B,), int(t), device=device, dtype=torch.long)
-        elif t.ndim == 0:
-            t = t.expand(B)
+        H = self._get_H()                             # (3,3)
+        # (B,3) @ (3,3)^T -> (B,3)
+        out = homo @ H.transpose(0, 1)                # (B,3)
 
-        Ht = self._get_Ht(t)  # (B,3,3)
-        out = torch.bmm(homo.unsqueeze(1), Ht.transpose(1, 2)).squeeze(1)  # (B,3)
-        w = out[:, 2:3]
+        w   = out[:, 2:3]
         den = w.sign() * torch.clamp(w.abs(), min=self.eps)
-        xy_t = out[:, :2] / den
+        xy_t = out[:, :2] / den                       # (B,2)
+
         return xy_t, w
 
 @torch.no_grad()
@@ -176,29 +179,40 @@ def apply_H_module_to_seq_per_t(seq_norm: np.ndarray,
     """
     seq_norm : [K,B,2] (normalized student 좌표)
     ts       : [K] (int timesteps)
-    return   : [K,B,2] (H(t) 적용된 normalized 좌표)
-    NaN/Inf는 큰 값으로 클리핑해서 이후 plotting에서 에러 안 나도록 처리.
+    return   : [K,B,2]
+
+    - 학습 코드와 동일하게, 전체 시퀀스 중 마지막 스텝(K-1)에만 H를 적용
+      (나머지 스텝은 그대로 둠)
+    - NaN/Inf는 클리핑해서 이후 plotting에서 에러 안 나도록 처리.
     """
     K, B, _ = seq_norm.shape
     outs = []
     H_module.eval()
     for k in range(K):
-        t_k = int(ts[k])
         xk = torch.from_numpy(seq_norm[k]).to(device=device, dtype=torch.float32)  # (B,2)
-        xk_H, _ = H_module(xk, t_k)  # (B,2)
+
+        # 기본은 identity (그대로 두고)
+        xk_H = xk
+        # 마지막 스텝에만 H 적용 (학습 코드의 apply_H_to_seq_per_t와 동일)
+        if k == K - 1:
+            xk_H, _ = H_module(xk)
 
         x_np = xk_H.detach().cpu().numpy()
         # NaN/Inf 보호
         mask_finite = np.isfinite(x_np)
         if not np.all(mask_finite):
-            # NaN/Inf는 0으로 두고, 나머지 finite 값의 평균/표준편차 기반으로 클립
             finite_vals = x_np[mask_finite]
             if finite_vals.size == 0:
                 x_np = np.zeros_like(x_np, dtype=np.float32)
             else:
                 mean = finite_vals.mean()
                 std = finite_vals.std() + 1e-6
-                x_np = np.nan_to_num(x_np, nan=mean, posinf=mean + 5 * std, neginf=mean - 5 * std)
+                x_np = np.nan_to_num(
+                    x_np,
+                    nan=mean,
+                    posinf=mean + 5 * std,
+                    neginf=mean - 5 * std,
+                )
         outs.append(x_np.astype(np.float32))
     return np.stack(outs, axis=0)
 
@@ -264,7 +278,6 @@ def collect_student_xt_seq_ddim(student: nn.Module,
             eps = student(xin, t_b)
             out = sched.step(model_output=eps, timestep=t, sample=x, eta=eta)
             x = out.prev_sample
-            # pred_x0 = out.pred_original_sample
             xs.append(x.detach().cpu().numpy())
     finally:
         if was_train:
@@ -529,7 +542,6 @@ def visualize_student_ddim_trajectories(cfg: dict,
             H_module = LearnableHomography(
                 init_9=[1, 0, 0, 0, 1, 0, 0, 0, 1],
                 eps=H_eps,
-                T=cfg["T"],
                 fix_last_row=False,
             ).to(device)
             state = torch.load(H_ckpt_path, map_location=device)
@@ -542,7 +554,7 @@ def visualize_student_ddim_trajectories(cfg: dict,
                 seq_norm_H,
                 out_traj / f"student_traj_norm_H_steps{K}_N{B}.png",
                 max_lines=512,
-                title=f"Student DDIM (norm + H(t)) steps={K} N={B} eta={eta}",
+                title=f"Student DDIM (norm + H) steps={K} N={B} eta={eta}",
             )
             if save_frames:
                 f_norm_H = ensure_dir(out_traj / "frames_norm_H")
@@ -588,7 +600,7 @@ def visualize_student_ddim_trajectories(cfg: dict,
                 seq_den_H,
                 out_traj / f"student_traj_denorm_H_steps{K}_N{B}.png",
                 max_lines=512,
-                title=f"Student DDIM (denorm + H(t)) steps={K} N={B} eta={eta}",
+                title=f"Student DDIM (denorm + H) steps={K} N={B} eta={eta}",
             )
             if save_frames:
                 f_den_H = ensure_dir(out_traj / "frames_denorm_H")
@@ -616,35 +628,34 @@ def visualize_student_ddim_trajectories(cfg: dict,
     print(f"[DONE] out dir: {out_traj.resolve()}")
 
 
-# 1124
-# 1124_lr1e4_n32_b2048_ddim_50_150_steps_no_init_rkdW0.1_invW0.0_invinvW0.0_fidW0.0_sameW0.0_x0_pred_rkd_with_teacher_x0_inv_only_x0
-# 1124_lr1e4_n32_b2048_ddim_50_150_steps_no_init_rkdW0.1_invW0.0_invinvW0.0_fidW0.0_sameW1e-05_x0_pred_rkd_with_teacher_x0_inv_only_x0
-# 1124_lr1e4_n32_b2048_ddim_50_150_steps_no_init_rkdW0.1_invW0.1_invinvW1.0_fidW0.0001_sameW0.0_x0_pred_rkd_with_teacher_x0_inv_only_x0
-
 # ===================== ARGS / ENTRY ===================== #
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Visualize Student DDIM trajectories + pure score field (norm / denorm / H)."
     )
     parser.add_argument("--ckpt", type=str,
-        default="runs/1124_lr1e4_n32_b2048_ddim_50_150_steps_no_init_rkdW0.1_invW0.0_invinvW0.0_fidW0.0_sameW1e-05_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step014000.pt",
+        default=f"runs/1209_lr1e4_n32_H_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.1_sameW0.1_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_student_step075000.pt",
         help="Path to student checkpoint .pt."
     )
+    parser.add_argument("--H-ckpt", type=str, 
+        default="runs/1209_lr1e4_n32_H_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.1_sameW0.1_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_H_step075000.pt",
+        help="Path to ckpt_H_stepXXXXX.pt (LearnableHomography state_dict)."
+    )
+    parser.add_argument("--out", type=str,
+                        default="vis_traj_H0_1210_rkd0.08_x0_inv0.1_invinv1.0_fd0.1_same0.1",
+                        help="Output directory root.")
+
     parser.add_argument("--n", type=int, default=32, help="Number of pure noise samples.")
-    parser.add_argument("--steps", type=int, default=100, help="DDIM sampling steps.")
+    parser.add_argument("--steps", type=int, default=40, help="DDIM sampling steps.")
     parser.add_argument("--eta", type=float, default=0.0, help="DDIM eta.")
     parser.add_argument("--frames", type=bool, default=True,
                         help="Save per-timestep frames for norm / denorm / H.")
     parser.add_argument("--gif", type=bool, default=True,
                         help="Make GIFs for norm / denorm / H.")
-    parser.add_argument("--out", type=str,
-                        default="vis_traj_rkd_x0_pred_only_with_teacher_x0_inv_invinv_fd",
-                        help="Output directory root.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed.")
     parser.add_argument("--student-stats", type=str,
-                        # default="smile_data_n8192_scale10_rot0_trans_0_0_H_32_-13_100_55_8_200_0.05_0.005_1.2_n32/normalization_stats.json",
-                        default="smile_data_n32_scale2_rot60_trans_50_-20/normalization_stats.json",
-                        # e.g. "smile_data_n8192_scale10_rot0_trans_0_0_H_32/normalization_stats.json",
+                        default="smile_data_n8192_scale10_rot0_trans_0_0_H_32/normalization_stats.json",
+                        # default="smile_data_n32_scale2_rot60_trans_50_-20/normalization_stats.json",
                         help="JSON with {'mean':[...],'std':[...]} for student denorm.")
 
     # Pure score field 옵션
@@ -656,9 +667,7 @@ def parse_args():
                         help="Streamplot density.")
 
     # H-module ckpt
-    parser.add_argument("--H-ckpt", type=str, default="runs/1124_lr1e4_n32_b2048_ddim_50_150_steps_no_init_rkdW0.1_invW0.0_invinvW0.0_fidW0.0_sameW1e-05_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_H_step014000.pt",
-                        help="Path to ckpt_H_stepXXXXX.pt (LearnableHomography state_dict).")
-    parser.add_argument("--H-eps", type=float, default=1e-6,
+    parser.add_argument("--H-eps", type=float, default=1e-8,
                         help="Small epsilon used inside H-module for W division stability.")
 
     return parser.parse_args()

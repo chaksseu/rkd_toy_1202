@@ -21,8 +21,8 @@ import itertools
 W_RKD = 0.08
 W_INV = 0.1
 W_INVINV = 1.0
-W_FID = 0.000000002
-W_SAME = 0.0#000001
+W_FID = 2.0
+W_SAME = 0.0
 
 # W_RKD = 0.08
 # W_INV = 0.0
@@ -30,10 +30,10 @@ W_SAME = 0.0#000001
 # W_FID = 0.0
 # W_SAME = 0.0
 
-CUDA_NUM = 0
+CUDA_NUM = 3
 BATCH_SIZE = 1024
 
-WANDB_NAME=f"1209_lr1e4_n32_H_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0"
+WANDB_NAME=f"1209_lr1e4_n32_H_b{BATCH_SIZE}_T100_ddim_30_50_steps_no_init_rkdW{W_RKD}_invW{W_INV}_invinvW{W_INVINV}_fidW{W_FID}_sameW{W_SAME}_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm"
 
 
 CONFIG = {
@@ -903,15 +903,27 @@ def train_student_uniform_xt(cfg: Dict):
 
         xt_T_x0 = xt_T_seq[-1]
 
-        xt_S_seq_denorm = [denormalize_torch(H_module(x)[0], mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
-        xt_T_x0_denorm = denormalize_torch(xt_T_x0, mu_teacher_tensor, sigma_teacher_tensor)
-        x0_batch_denorm = denormalize_torch(H_module(x0_batch)[0], mu_student_tensor, sigma_student_tensor)
-        x0_inv_T_denorm = denormalize_torch(x0_inv_T[-1], mu_teacher_tensor, sigma_teacher_tensor)
+        # denorm
+        # xt_S_seq_denorm = [denormalize_torch(H_module(x)[0], mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+        # xt_T_x0_denorm = denormalize_torch(xt_T_x0, mu_teacher_tensor, sigma_teacher_tensor)
+        # x0_batch_denorm = denormalize_torch(H_module(x0_batch)[0], mu_student_tensor, sigma_student_tensor)
+        # x0_inv_T_denorm = denormalize_torch(x0_inv_T[-1], mu_teacher_tensor, sigma_teacher_tensor)
 
-        x0_batch_denorm_no_H = denormalize_torch(x0_batch, mu_student_tensor, sigma_student_tensor)
-        xt_S_seq_denorm_no_H = denormalize_torch(xt_S_seq[-1], mu_student_tensor, sigma_student_tensor) 
+        # x0_batch_denorm_no_H = denormalize_torch(x0_batch, mu_student_tensor, sigma_student_tensor)
+        # xt_S_seq_denorm_no_H = denormalize_torch(xt_S_seq[-1], mu_student_tensor, sigma_student_tensor) 
 
-        xt_S_seq_denorm_no_H_seq = [denormalize_torch(x, mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+        # xt_S_seq_denorm_no_H_seq = [denormalize_torch(x, mu_student_tensor, sigma_student_tensor) for x in xt_S_seq]
+
+        # no norm
+        xt_S_seq_denorm = [H_module(x)[0] for x in xt_S_seq]
+        xt_T_x0_denorm = xt_T_x0
+        x0_batch_denorm = H_module(x0_batch)[0]
+        x0_inv_T_denorm = x0_inv_T[-1]
+
+        x0_batch_denorm_no_H = x0_batch
+        xt_S_seq_denorm_no_H = xt_S_seq[-1]
+
+        xt_S_seq_denorm_no_H_seq = xt_S_seq
 
 
         # --- RKD (전 타임스텝) ---  (W_RKD != 0일 때만 계산)
