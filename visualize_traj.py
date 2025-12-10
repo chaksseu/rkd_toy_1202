@@ -413,13 +413,15 @@ def visualize_student_ddim_trajectories(cfg: dict,
 # 1202
 # f"runs/1202_only_diff_loss_B1024_teacher65536_T{TT}/ckpt_student_step600000.pt"
 
+# runs/1209_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.01_sameW0.001_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_student_step120000.pt
+
 # ===================== ARGS / ENTRY ===================== #
 TT=50
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize Student DDIM trajectories + pure score field (norm & denorm).")
     parser.add_argument("--ckpt", type=str,
-        default=f"runs/1206_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.05_x0_pred_rkd_with_teacher_x0_inv_only_x0/ckpt_student_step225000.pt",
+        default=f"runs/1209_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.01_sameW0.1_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_student_step120000.pt",
         help="Path to student checkpoint .pt.")
     parser.add_argument("--n", type=int, default=32, help="Number of pure noise samples.")
     parser.add_argument("--steps", type=int, default=40, help="DDIM sampling steps.")
@@ -427,7 +429,7 @@ def parse_args():
     # bool 인자 (요청대로 str2bool 제거; 단, CLI에서 'False'를 문자열로 주면 True로 해석될 수 있으니 유의)
     parser.add_argument("--frames", type=bool, default=True, help="Save per-timestep frames for both norm/denorm.")
     parser.add_argument("--gif", type=bool, default=True, help="Make GIFs (norm/denorm).")
-    parser.add_argument("--out", type=str, default=f"vis_traj_rkdW0.08_invW0.1_invinvW1.0_fidW0.0005_sameW0.05", help="Output directory root.")
+    parser.add_argument("--out", type=str, default=f"vis_traj_rkdW0.08_invW0.1_invinvW1.0_fidW0.01_sameW0.1_no_norm", help="Output directory root.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--student-stats", type=str,
                         # default=None,

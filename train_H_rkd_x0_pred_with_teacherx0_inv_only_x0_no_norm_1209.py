@@ -87,7 +87,7 @@ CONFIG = {
     "ddim_eta": 0.0,
     # wandb
     "use_wandb": True,
-    "wandb_project": "RKD-DKDM-AICA-1209-H",
+    "wandb_project": "RKD-DKDM-AICA-1209-H-NO-NORM",
     "wandb_run_name": WANDB_NAME,
 
     "use_learnable_H": True,
