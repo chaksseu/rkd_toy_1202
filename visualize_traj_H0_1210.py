@@ -634,15 +634,15 @@ def parse_args():
         description="Visualize Student DDIM trajectories + pure score field (norm / denorm / H)."
     )
     parser.add_argument("--ckpt", type=str,
-        default=f"runs/1209_lr1e4_n32_H_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.1_sameW0.1_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_student_step075000.pt",
+        default=f"runs/1210_lr1e4_n32_H_b1024_T100_ddim_30_50_steps_no_init_rkdW0.1_invW0.1_invinvW1.0_fidW0.1_sameW0.01_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_student_step365000.pt",
         help="Path to student checkpoint .pt."
     )
     parser.add_argument("--H-ckpt", type=str, 
-        default="runs/1209_lr1e4_n32_H_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.1_sameW0.1_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_H_step075000.pt",
+        default="runs/1209_lr1e4_n32_H_b1024_T100_ddim_30_50_steps_no_init_rkdW0.1_invW0.1_invinvW1.0_fidW0.1_sameW0.01_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm/ckpt_H_step365000.pt",
         help="Path to ckpt_H_stepXXXXX.pt (LearnableHomography state_dict)."
     )
     parser.add_argument("--out", type=str,
-                        default="vis_traj_H0_1210_rkd0.08_x0_inv0.1_invinv1.0_fd0.1_same0.1",
+                        default="vis_traj_H0_1210_rkd0.1_x0_inv0.1_invinv1.0_fd0.1_same0.01",
                         help="Output directory root.")
 
     parser.add_argument("--n", type=int, default=32, help="Number of pure noise samples.")

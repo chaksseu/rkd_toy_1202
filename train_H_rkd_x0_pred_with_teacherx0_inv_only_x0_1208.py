@@ -18,7 +18,7 @@ from torch.utils.data import Dataset, DataLoader
 import itertools
 # ===================== CONFIG ===================== #
 
-W_RKD = 0.08
+W_RKD = 0.1 #08
 W_INV = 0.1
 W_INVINV = 1.0
 W_FID = 0.000000002

@@ -24,7 +24,7 @@ import itertools
 # W_FID = 0.0005
 # W_SAME = 1.0
 
-W_RKD = 0.08
+W_RKD = 0.1
 W_INV = 0.1
 W_INVINV = 1.0
 W_FID = 0.1
