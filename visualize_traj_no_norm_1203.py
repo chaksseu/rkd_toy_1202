@@ -17,22 +17,24 @@ import matplotlib.pyplot as plt
 from diffusers import DDPMScheduler, DDIMScheduler
 
 # ===================== CONFIG ===================== #
-CUDA_NUM = 0
+CUDA_NUM = 5
 TT = 100
 DDIM_STEPS = 40
 
 # runs/1205_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.01_sameW0.001_x0_pred_rkd_with_teacher_x0_inv_only_x0_S_no_norm/ckpt_student_step090000.pt
 # runs/1205_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.01_sameW0.0001_x0_pred_rkd_with_teacher_x0_inv_only_x0_S_no_norm/ckpt_student_step235000.pt
 
+# runs/1212_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.1_invW0.1_invinvW1.0_fidW0.1_sameW0.01_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm_jit/ckpt_student_step130000.pt
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Visualize Student DDIM trajectories.")
-    parser.add_argument("--ckpt", type=str, default=f"runs/1205_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.08_invW0.1_invinvW1.0_fidW0.01_sameW0.0001_x0_pred_rkd_with_teacher_x0_inv_only_x0_S_no_norm/ckpt_student_step185000.pt", help="Path to student checkpoint .pt.")
+    parser.add_argument("--ckpt", type=str, default=f"runs/1212_lr1e4_n32_b1024_T100_ddim_30_50_steps_no_init_rkdW0.1_invW0.1_invinvW1.0_fidW0.1_sameW0.01_x0_pred_rkd_with_teacher_x0_inv_only_x0_no_norm_jit/ckpt_student_step130000.pt", help="Path to student checkpoint .pt.")
     parser.add_argument("--n", type=int, default=32, help="Number of pure noise samples.")
     parser.add_argument("--steps", type=int, default=DDIM_STEPS, help="DDIM sampling steps.")
     parser.add_argument("--eta", type=float, default=0.0, help="DDIM eta.")
     parser.add_argument("--frames", type=bool, default=True, help="Save per-timestep frames.")
     parser.add_argument("--gif", type=bool, default=True, help="Make GIFs.")
-    parser.add_argument("--out", type=str, default=f"vis_traj_rkdW0.08_invW0.1_invinvW1.0_fidW0.01_sameW0.0001_no_norm", help="Output directory root.")
+    parser.add_argument("--out", type=str, default=f"vis_traj_1215_rkdW0.1_invW0.1_invinvW1.0_fidW0.1_sameW0.01_no_norm", help="Output directory root.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     return parser.parse_args()
 
