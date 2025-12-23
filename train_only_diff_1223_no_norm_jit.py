@@ -281,8 +281,8 @@ def train_student_uniform_xt(cfg: Dict):
         eps = torch.randn_like(x0_batch)
         x_t_for_diff = train_sched.add_noise(x0_batch, eps, t_b_s)
 
-        eps_pred = student(x_t_for_diff, t_b_s)
-        diff_loss = cfg["W_DIFF"] * F.mse_loss(eps_pred, eps, reduction="mean")
+        x0_jit_pred = student(x_t_for_diff, t_b_s)
+        diff_loss = cfg["W_DIFF"] * F.mse_loss(x0_jit_pred, x0_batch, reduction="mean")
 
         loss = diff_loss
 
